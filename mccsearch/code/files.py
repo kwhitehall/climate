@@ -7,11 +7,12 @@ documentation for a complete list of supported formats.
 """
 
 from os import path
+from netCDF4 import Dataset, num2date, date2num
 
-try:
-    import Nio
-except ImportError:
-    import nio as Nio
+# try:
+#     import Nio
+# except ImportError:
+#     import nio as Nio
 
 import numpy as np
 import numpy.ma as ma
@@ -48,7 +49,8 @@ def getVariableByType(filename, variableType):
         name match cannot be found.
     """
     try:
-        f = Nio.open_file(filename)
+        #f = Nio.open_file(filename)
+        f = Dataset(filename,'r', format='NETCDF')
     except:
         #print 'PyNio had an issue opening the filename (%s) you provided' % filename
         print "NIOError:", sys.exc_info()[0]
@@ -80,7 +82,8 @@ def getVariableRange(filename, variableName):
         variableRange - tuple of order (variableMin, variableMax)
     """
     try:
-        f = Nio.open_file(filename)
+        #f = Nio.open_file(filename)
+        f = Dataset(filename,'r', format='NETCDF')
     except:
         #print 'PyNio had an issue opening the filename (%s) you provided' % filename
         print "NIOError:", sys.exc_info()[0]
@@ -121,7 +124,8 @@ def read_data_from_file_list(filelist, myvar, timeVarName, latVarName, lonVarNam
     #    ii) find out how many timesteps in the file 
     #        (assume same ntimes in each file in list)
     #     -allows you to create an empty array to store variable data for all times
-    tmp = Nio.open_file(filename)
+    #tmp = Nio.open_file(filename)
+    tmp = Dataset(filename, 'r', format='NETCDF')
     latsraw = tmp.variables[latVarName][:]
     lonsraw = tmp.variables[lonVarName][:]
     lonsraw[lonsraw > 180] = lonsraw[lonsraw > 180] - 360.  # convert to -180,180 if necessary
@@ -154,7 +158,8 @@ def read_data_from_file_list(filelist, myvar, timeVarName, latVarName, lonVarNam
     for ifile in filelist:
 
         #print 'Loading data from file: ',filelist[i]
-        f = Nio.open_file(ifile)
+        #f = Nio.open_file(ifile)
+        f = Dataset(ifile,'r', format='NETCDF')
         t2raw = f.variables[myvar][:]
         timesraw = f.variables[timeVarName]
         time = timesraw[:]
@@ -220,10 +225,12 @@ def select_var_from_file(myfile, fmt='not set'):
     print fmt
     
     if fmt == 'not set':
-        f = Nio.open_file(myfile)
+        #f = Nio.open_file(myfile)
+        f = Dataset(myfile,'r', format='NETCDF')
     
     if fmt != 'not set':
-        f = Nio.open_file(myfile, format=fmt)
+        #f = Nio.open_file(myfile, format=fmt)
+        f = Dataset(myfile,'r', format='NETCDF')
     
     keylist = f.variables.keys()
     
@@ -251,7 +258,8 @@ def select_var_from_wrf_file(myfile):
         Peter Lean  September 2010
     '''
 
-    f = Nio.open_file(myfile, format='nc')
+    #f = Nio.open_file(myfile, format='nc')
+    f = Dataset(myfile,'r', format='NETCDF')
     
     keylist = f.variables.keys()
 
@@ -290,7 +298,9 @@ def read_lolaT_from_file(filename, latVarName, lonVarName, timeVarName, file_typ
         
     """
 
-    tmp = Nio.open_file(filename, format=file_type)
+    #tmp = Nio.open_file(filename, format=file_type
+    tmp = Dataset(filename, 'r', format=file_type)
+
     lonsraw = tmp.variables[lonVarName][:]
     latsraw = tmp.variables[latVarName][:]
     lonsraw[lonsraw > 180] = lonsraw[lonsraw > 180] - 360.  # convert to -180,180 if necessary
@@ -318,7 +328,8 @@ def read_data_from_one_file(ifile, myvar, timeVarName, lat, file_type):
     # 2. Because one of the model data exceeds 240 mos (243 mos), the model data must be
     #    truncated to the 240 mons using the ntimes determined from the first file.
     ##################################################################################
-    f = Nio.open_file(ifile)
+    #f = Nio.open_file(ifile)
+    f = Dataset(ifile,'r', format='NETCDF')
     try:
         varUnit = f.variables[myvar].units.upper()
     except:
@@ -343,7 +354,8 @@ def findTimeVariable(filename):
             variableNameList - list of variable names from the input filename
     """
     try:
-        f = Nio.open_file(filename, mode='r')
+        #f = Nio.open_file(filename, mode='r')
+        f = Dataset(filename,'r', format='NETCDF')
     except:
         print("Unable to open '%s' to try and read the Time variable" % filename)
         raise
@@ -383,7 +395,8 @@ def findLatLonVarFromFile(filename):
         -lonMax
     """
     try:
-        f = Nio.open_file(filename, mode='r')
+        #f = Nio.open_file(filename, mode='r')
+        f = Dataset(filename,'r', format='NETCDF')
     except:
         print("Unable to open '%s' to try and read the Latitude and Longitude variables" % filename)
         raise
@@ -449,7 +462,8 @@ def read_data_from_file_list_K(filelist, myvar, timeVarName, latVarName, lonVarN
     #    i)  read in lats, lons
     #    ii) find out how many timesteps in the file (assume same ntimes in each file in list)
     #     -allows you to create an empty array to store variable data for all times
-    tmp = Nio.open_file(filelist[0], format=file_type)
+    #tmp = Nio.open_file(filelist[0], format=file_type)
+    tmp = Dataset(filelist[0],'r', format=file_type)
     latsraw = tmp.variables[latVarName][:]
     lonsraw = tmp.variables[lonVarName][:]
     lonsraw[lonsraw > 180] = lonsraw[lonsraw > 180] - 360.  # convert to -180,180 if necessary
@@ -477,7 +491,8 @@ def read_data_from_file_list_K(filelist, myvar, timeVarName, latVarName, lonVarN
     i = 0
     for ifile in filelist:
         #print 'Loading data from file: ',filelist[i]
-        f = Nio.open_file(ifile)
+        #f = Nio.open_file(ifile)
+        f = Dataset(ifile,'r', format='NETCDF')
         t2raw = f.variables[myvar][:]
         timesraw = f.variables[timeVarName]
         #time = timesraw[0:ntimes]
@@ -524,7 +539,8 @@ def find_latlon_ranges(filelist, lat_var_name, lon_var_name):
     filename = filelist[0]
     
     try:
-        f = Nio.open_file(filename)
+        #f = Nio.open_file(filename)
+        f = Dataset(filename,'r', format='NETCDF')
         
         lats = f.variables[lat_var_name][:]
         latMin = lats.min()
@@ -622,7 +638,8 @@ def writeNCfile(fileName, numSubRgn, lons, lats, obsData, mdlData, obsRgnAvg, md
     dimY = mdlData.shape[2]      # y-dimension
     dimX = mdlData.shape[3]      # x-dimension
     dimR = obsRgnAvg.shape[1]    # the number of subregions
-    f = Nio.open_file(fileName, mode='w', format='nc')
+    #f = Nio.open_file(fileName, mode='w', format='nc')
+    f = Dataset(filename,'w', format='NETCDF')
     print mdlRgnAvg.shape, dimM, dimR, dimT
     #create global attributes
     f.globalAttName = ''

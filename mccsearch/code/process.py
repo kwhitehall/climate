@@ -11,6 +11,7 @@ import time
 
 # 3rd Party Imports
 import Nio
+from netCDF4 import Dataset, num2date, date2num
 import numpy as np
 import numpy.ma as ma
 from scipy.ndimage import map_coordinates
@@ -632,7 +633,7 @@ def getModelTimes(modelFile, timeVarName):
             dt = datetime.timedelta(years=xtime)
             new_time = base_time + dt
         
-        #print "xtime is:", xtime, "dt is: ", dt
+        print "xtime is:", xtime, "dt is: ", dt
         
 
 
@@ -647,6 +648,110 @@ def getModelTimes(modelFile, timeVarName):
           times = normalizeDatetimes(times, modelTimeStep) 
     except:
         raise
+
+    return times, modelTimeStep
+
+def getModelTimesOld(modelFile, timeVarName):
+    '''
+    TODO:  Do a better job handling dates here
+    Routine to convert from model times ('hours since 1900...', 'days since ...')
+    into a python datetime structure
+
+    Input::
+        modelFile - path to the model tile you want to extract the times list and modelTimeStep from
+        timeVarName - name of the time variable in the model file
+
+    Output::
+        times  - list of python datetime objects describing model data times
+        modelTimeStep - 'hourly','daily','monthly','annual'
+    '''
+
+    f = Nio.open_file(modelFile)
+    #f = Dataset(modelFile,'r', format='NETCDF')
+    xtimes = f.variables[timeVarName]
+    timeFormat = xtimes.attributes['units']
+    #timeFormat = xtimes.units #attributes['units']
+    
+    # search to check if 'since' appears in units
+    try:
+         sinceLoc = re.search('since', timeFormat).end()
+
+
+    #KDW the below block generates and error. But the print statement, indicates that sinceLoc found something
+    except AttributeError:
+         print 'Error decoding model times: time variable attributes do not contain "since"'
+         raise
+
+    units = ''
+    TIME_UNITS = ('minutes', 'hours', 'days', 'months', 'years')
+    # search for 'seconds','minutes','hours', 'days', 'months', 'years' so know units
+    for unit in TIME_UNITS:
+        if re.search(unit, timeFormat):
+            units = unit
+            break
+
+    # cut out base time (the bit following 'since')
+    base_time_string = string.lstrip(timeFormat[sinceLoc:])
+    
+    # decode base time
+    base_time = decodeTimeFromString(base_time_string)
+    
+    times = []
+
+    # print "**** ", timeFormat
+    # print xtimes
+    # #print "times ", times
+
+    # print "xtimes ", xtimes[0]
+    
+    #xtime = int(timeFormat[-2:])
+    #print "xtime ", xtime
+
+
+    for xtime in xtimes[:]:
+              
+        # Cast time as an int ***KDW remove this so fractional xtime can be read from MERG
+        xtime = int(xtime)
+
+        if units == 'minutes':
+            dt = datetime.timedelta(minutes=xtime)
+            new_time = base_time + dt
+        elif units == 'hours':
+            dt = datetime.timedelta(hours=xtime)
+            new_time = base_time + dt
+        elif units == 'days':
+            dt = datetime.timedelta(days=xtime)
+            new_time = base_time + dt
+        elif units == 'months':
+            # NB. adding months in python is complicated as month length varies and hence ambiguous.
+            # Perform date arithmatic manually
+            #  Assumption: the base_date will usually be the first of the month
+            #              NB. this method will fail if the base time is on the 29th or higher day of month
+            #                      -as can't have, e.g. Feb 31st.
+            new_month = int(base_time.month + xtime % 12)
+            new_year = int(math.floor(base_time.year + xtime / 12.))
+            new_time = datetime.datetime(new_year, new_month, base_time.day, base_time.hour, base_time.second, 0)
+        elif units == 'years':
+            dt = datetime.timedelta(years=xtime)
+            new_time = base_time + dt   
+
+
+        times.append(new_time)
+
+    print "xtime is:", xtime, "dt is: ", dt  
+
+    try:
+        #timeStepLength = 1 # 
+        timeStepLength = int(xtimes[1] - xtimes[0] + 1.e-12)
+        modelTimeStep = getModelTimeStep(units, timeStepLength)
+     
+        #KDW if timeStepLength is zero do not normalize times as this would create an empty list
+        if timeStepLength != 0:
+          times = normalizeDatetimes(times, modelTimeStep) 
+    except:
+        raise
+
+    f.close
 
     return times, modelTimeStep
 
@@ -1077,7 +1182,8 @@ def decode_model_timesK(ifile,timeVarName,file_type):
     #      times  - list of python datetime objects describing model data times
     #     Peter Lean February 2011
     #################################################################################################
-    f = Nio.open_file(ifile,mode='r',options=None,format=file_type)
+    #f = Nio.open_file(ifile,mode='r',options=None,format=file_type)
+    f = Dataset(ifile,'r',format="NETCDF")
     xtimes = f.variables[timeVarName]
     timeFormat = xtimes.attributes['units']
     #timeFormat = "days since 1979-01-01 00:00:00"

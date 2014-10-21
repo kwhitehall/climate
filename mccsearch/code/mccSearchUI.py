@@ -7,7 +7,7 @@ import networkx as nx
 import numpy as np
 import numpy.ma as ma
 import os
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 import subprocess
 
 #mccSearch modules
@@ -34,9 +34,11 @@ def main():
     #for GrADs
     subprocess.call('export DISPLAY=:0.0', shell=True)
 
+
    
     print "Running MCCSearch ..... \n"
     DIRS['mainDirStr'] = raw_input("> Please enter working directory: \n" )   # This is where data created will be stored
+
 
     preprocessing = raw_input ("> Do you need to preprocess the MERG files? [y/n]: \n")
     while preprocessing.lower() != 'n':
@@ -52,6 +54,13 @@ def main():
             print "Error! Invalid choice "
             preprocessing = raw_input ("> Do you need to preprocess the MERG files? [y/n]: \n")
     
+#REMOVE THIS JUST TESTING HERE!!!!!!!!
+    #mccSearch.readMergData("/Users/kimwhitehall/Documents/HU/research/DATA/mergNETCDF", filelist=["/Users/kimwhitehall/Documents/HU/postDoc/paper/mergNETCDF/merg_2013080923_4km-pixel.nc"])
+    mccSearch.createMainDirectory(DIRS['mainDirStr'])
+    mccSearch.compareToMthlyTotal(mccSearch.getMCCListFromFile(), "/Users/kimwhitehall/Documents/HU/postDoc/mthlyData/3B43.20060701.7A.nc")
+
+    sys.exit()
+#END REMOVE THIS
 
     #get the location of the MERG and TRMM data
     DIRS['CEoriDirName'] = raw_input("> Please enter the directory to the MERG netCDF files: \n")
@@ -84,11 +93,11 @@ def main():
         print "Invalid time entered for endDateTime!"
         endDateTime = raw_input("> Please enter the end date and time yyyymmddhr: \n")
     
-    #check if all the files exisits in the MERG and TRMM directories entered
-    test, _ = mccSearch.checkForFiles(startDateTime, endDateTime, DIRS['TRMMdirName'], 2)
-    if test == False:
-        print "Error with files in the original TRMM directory entered. Please check your files before restarting. "
-        return
+    # #check if all the files exisits in the MERG and TRMM directories entered
+    # test, _ = mccSearch.checkForFiles(startDateTime, endDateTime, DIRS['TRMMdirName'], 2)
+    # if test == False:
+    #     print "Error with files in the original TRMM directory entered. Please check your files before restarting. "
+    #     return
     test, filelist = mccSearch.checkForFiles(startDateTime, endDateTime, DIRS['CEoriDirName'],1)
     if test == False:
         print "Error with files in the original MERG directory entered. Please check your files before restarting. "
@@ -117,6 +126,13 @@ def main():
     print ("-"*80) 
     print "\n -------------- Reading MERG and TRMM Data ----------"
     mergImgs, timeList = mccSearch.readMergData(DIRS['CEoriDirName'], filelist)
+    #sys.exit()
+
+    #$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+    # #open the lightning data
+    # mccSearch.gridPointData("/Users/kimwhitehall/Documents/HU/postDoc/addingLightning",startDateTime[0:8], endDateTime[0:8],00)
+
+    # sys.exit()
     print "\n -------------- findCloudElements ----------"
     CEGraph = mccSearch.findCloudElements(mergImgs,timeList,DIRS['TRMMdirName'])
     #if the TRMMdirName wasnt entered for whatever reason, you can still get the TRMM data this way

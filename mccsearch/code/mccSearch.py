@@ -19,12 +19,15 @@ import os
 import pickle
 import re
 from scipy import ndimage
+from scipy.interpolate import griddata
 import string
 import subprocess
+#from subprocess import Popen, PIPE
 import sys
 import time
 
 import networkx as nx
+
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from matplotlib.dates import DateFormatter,HourLocator 
@@ -32,18 +35,21 @@ from matplotlib import cm
 import matplotlib.cm as cm
 import matplotlib.colors as mcolors
 from matplotlib.ticker import FuncFormatter, FormatStrFormatter
+from matplotlib import path
+from matplotlib.mlab import griddata
+from mpl_toolkits.basemap import Basemap
 
 #existing modules in services
-import files
+#import files
 import process
 #----------------------- GLOBAL VARIABLES --------------------------
 # --------------------- User defined variables ---------------------
 #FYI the lat lon values are not necessarily inclusive of the points given. These are the limits
 #the first point closest the the value (for the min) from the MERG data is used, etc.
-LATMIN = '5.0' #min latitude; -ve values in the SH e.g. 5S = -5
-LATMAX = '19.0' #max latitude; -ve values in the SH e.g. 5S = -5 20.0
-LONMIN = '-5.0' #min longitude; -ve values in the WH e.g. 59.8W = -59.8 -30
-LONMAX = '9.0' #min longitude; -ve values in the WH e.g. 59.8W = -59.8  30
+LATMIN = '5.0' #'-60.0'#  #4.0' #'5.0' #min latitude; -ve values in the SH e.g. 5S = -5
+LATMAX = '19.0' #'60.0' # #'13.0' #'19.0' #max latitude; -ve values in the SH e.g. 5S = -5 20.0
+LONMIN = '-5.0' #'-180.0' # #'-6.0' #'-5.0' #min longitude; -ve values in the WH e.g. 59.8W = -59.8 -30
+LONMAX = '9.0' #'120.0' # #'13.0' #'9.0' #min longitude; -ve values in the WH e.g. 59.8W = -59.8  30
 XRES = 4.0				#x direction spatial resolution in km
 YRES = 4.0				#y direction spatial resolution in km
 TRES = 1 				#temporal resolution in hrs
@@ -77,7 +83,7 @@ PRUNED_GRAPH = nx.DiGraph()
 #------------------------ End GLOBAL VARS -------------------------
 #************************ Begin Functions *************************
 #******************************************************************
-def readMergData(dirname, filelist = None):
+def readMergData(dirname, filelist=None):
 	'''
 	Purpose::
 	    Read MERG data into RCMES format
@@ -107,8 +113,9 @@ def readMergData(dirname, filelist = None):
 	mergLatVarName = 'latitude'
 	mergLonVarName = 'longitude'
 	
-	filelistInstructions = dirname + '/*'
+	
 	if filelist == None:
+		filelistInstructions = dirname + '/*'
 		filelist = glob.glob(filelistInstructions)
 
 	
@@ -130,48 +137,101 @@ def readMergData(dirname, filelist = None):
 	else:
 		# Open the first file in the list to read in lats, lons and generate the  grid for comparison
 		tmp = Nio.open_file(filelist[0], format='nc')
-		
+
 		#clip the lat/lon grid according to user input
 		#http://www.pyngl.ucar.edu/NioExtendedSelection.shtml
 		latsraw = tmp.variables[mergLatVarName][mergLatVarName+"|"+LATMIN+":"+LATMAX].astype('f2')
 		lonsraw = tmp.variables[mergLonVarName][mergLonVarName+"|"+LONMIN+":"+LONMAX].astype('f2')
 		lonsraw[lonsraw > 180] = lonsraw[lonsraw > 180] - 360.  # convert to -180,180 if necessary
 		
+
+		# #Using NETCDF instead of Nio
+		#mergData = Dataset(filelist[0],'r', format='NETCDF')
+		# brightnesstemp = mergData.variables['ch4'][:,:,:]
+		# latsraw = mergData.variables['latitude'][:]
+		# lonsraw = mergData.variables['longitude'][:]
+		
+		#lonsraw[lonsraw > 180] = lonsraw[lonsraw > 180] - 360.  # convert to -180,180 if necessary
+
+		
 		LON, LAT = np.meshgrid(lonsraw, latsraw)
+		
 		#clean up
 		latsraw =[]
 		lonsraw = []
 		nygrd = len(LAT[:, 0]); nxgrd = len(LON[0, :])
 		tmp.close
-	
-	for files in filelist:
-		try:
-			thisFile = Nio.open_file(files, format='nc') 
-			#clip the dataset according to user lat,lon coordinates
-			#mask the data and fill with zeros for later 
-			tempRaw = thisFile.variables[mergVarName][mergLatVarName+"|"+LATMIN+":"+LATMAX \
-			                           +" " +mergLonVarName+"|"+LONMIN+":"+LONMAX ].astype('int16')
+		#mergData.close
 
-			tempMask = ma.masked_array(tempRaw, mask=(tempRaw > T_BB_MAX), fill_value=0) 
+		# #determine the subsection for future
+		# bbox = [LONMIN, LONMAX, LATMIN, LATMAX]
+		# iLONMIN, iLONMAX, jLATMIN, jLATMAX = bbox2ij(LON, LAT, bbox)
+
+		#print LAT[:,0]
+
+	for files in filelist:
+		
+		# #thisFile = Dataset(files,'r', format='NETCDF')
+
+		# #tempRaw = thisFile.variables[mergVarName][:,jLATMIN:jLATMAX, iLONMIN:iLONMAX].astype('int16')
+		# #print tempRaw.shape
+
+		# #print "tempRaw ", tempRaw
+
+		# tempMask = ma.masked_array(tempRaw, mask=(tempRaw > T_BB_MAX), fill_value=0) 
+		# #print "tempMask ", tempMask
+		
+		# #get the actual values that the mask returned
+		# tempMaskedValue = ma.zeros((tempRaw.shape)).astype('int16')
+		# for index, value in maenumerate(tempMask): 
+		# 	time_index, lat_index, lon_index = index			
+		# 	tempMaskedValue[time_index,lat_index, lon_index]=value	
 			
-			#get the actual values that the mask returned
-			tempMaskedValue = ma.zeros((tempRaw.shape)).astype('int16')
-			for index, value in maenumerate(tempMask): 
-				time_index, lat_index, lon_index = index			
-				tempMaskedValue[time_index,lat_index, lon_index]=value	
-				
-			timesRaw = thisFile.variables[mergTimeVarName]
-			#convert this time to a python datastring
-			time2store, _ = process.getModelTimes(files, mergTimeVarName)
-			#extend instead of append because getModelTimes returns a list already and we don't 
-			#want a list of list
-			timelist.extend(time2store)
-			mergImgs.extend(tempMaskedValue) 
-			thisFile.close
-			thisFile = None
+		# timesRaw = thisFile.variables[mergTimeVarName]
+		# #convert this time to a python datastring
+		# time2store, _ = process.getModelTimes(files, mergTimeVarName)
+
+
+		#try:
+		thisFile = Nio.open_file(files, format='nc') 
+		#clip the dataset according to user lat,lon coordinates
+		#mask the data and fill with zeros for later 
+		tempRaw = thisFile.variables[mergVarName][mergLatVarName+"|"+LATMIN+":"+LATMAX \
+		                           +" " +mergLonVarName+"|"+LONMIN+":"+LONMAX ].astype('int16')
+
+
+
+
+		#thisFile = Dataset(files,'r', format='NETCDF')
+		
+		#tempRaw = thisFile.variables['ch4'][:,:,:]
+		# tempRaw = thisFile.variables[mergVarName][mergLatVarName+"|"+LATMIN+":"+LATMAX \
+		#                            +" " +mergLonVarName+"|"+LONMIN+":"+LONMAX ].astype('int16')
+		
+
+		tempMask = ma.masked_array(tempRaw, mask=(tempRaw > T_BB_MAX), fill_value=0) 
+		
+		#get the actual values that the mask returned
+
+		tempMaskedValue = ma.zeros((tempRaw.shape)).astype('int16')
+		for index, value in maenumerate(tempMask): 
+			time_index, lat_index, lon_index = index	
+			tempMaskedValue[time_index,lat_index, lon_index]=value	
 			
-		except:
-			print "bad file! ", file
+		timesRaw = thisFile.variables[mergTimeVarName]
+		#convert this time to a python datastring
+		time2store, _ = process.getModelTimes(files, mergTimeVarName)
+		#print time2store
+		#sys.exit()#extend instead of append because getModelTimes returns a list already and we don't 
+		#want a list of list
+		timelist.extend(time2store)
+		mergImgs.extend(tempMaskedValue) 
+		
+		thisFile.close
+		thisFile = None
+		
+		# except:
+		# 	print "bad file! ", file
 
 	mergImgs = ma.array(mergImgs)
 
@@ -211,6 +271,9 @@ def findCloudElements(mergImgs,timelist,TRMMdirName=None):
         required according to Vila et al. (2008) is 2400km^2 
         therefore, 2400/16 = 150 contiguous squares
 	'''
+
+	print "mergImgs shape ", mergImgs.shape
+	print "timelist is ", timelist
 
 	frame = ma.empty((1,mergImgs.shape[1],mergImgs.shape[2]))
 	CEcounter = 0
@@ -1682,24 +1745,24 @@ def addNodeMCSIdentifier (thisNode, nodeMCSIdentifier):
 				eachdict[1]['nodeMCSIdentifier'] = nodeMCSIdentifier
 	return
 #******************************************************************
-def updateNodeMCSIdentifier (thisNode, nodeMCSIdentifier):
-	'''
-	Purpose:: 
-		Update an identifier to the node dictionary to indicate splitting, merging or neither node
+# def updateNodeMCSIdentifier (thisNode, nodeMCSIdentifier):
+# 	'''
+# 	Purpose:: 
+# 		Update an identifier to the node dictionary to indicate splitting, merging or neither node
 
-	Input:: 
-		thisNode: thisNode: a string representing the unique ID of a node
-		nodeMCSIdentifier: a string representing the stage of the MCS lifecyle  'I' for Initiation, 'M' for Maturity, 'D' for Decay  
+# 	Input:: 
+# 		thisNode: thisNode: a string representing the unique ID of a node
+# 		nodeMCSIdentifier: a string representing the stage of the MCS lifecyle  'I' for Initiation, 'M' for Maturity, 'D' for Decay  
 
-	Output :: None
+# 	Output :: None
 
-	'''
-	for eachdict in CLOUD_ELEMENT_GRAPH.nodes(thisNode):
-		if eachdict[1]['uniqueID'] == thisNode:
-			eachdict[1]['nodeMCSIdentifier'] = nodeBehaviorIdentifier
+# 	'''
+# 	for eachdict in CLOUD_ELEMENT_GRAPH.nodes(thisNode):
+# 		if eachdict[1]['uniqueID'] == thisNode:
+# 			eachdict[1]['nodeMCSIdentifier'] = nodeBehaviorIdentifier
 
-	return
-#******************************************************************
+# 	return
+# #******************************************************************
 def eccentricity (cloudElementLatLon):
 	'''
 	Purpose::
@@ -1806,6 +1869,13 @@ def findCESpeed(node, MCSList):
 			# delta_lon = (nodeLatLon[1] - aNodeLatLon[1]) 
 			delta_lon = ((thisDict(node)['cloudElementCenter'][1]+360.0) - (thisDict(aNode)['cloudElementCenter'][1]+360.0))
 			
+			#failsafe for movement only in one dir
+			if delta_lat == 0.0:
+				delta_lat = 1.0
+
+			if delta_lon == 0.0:
+				delta_lon = 1.0
+
 			try:
 				theSpeed = abs((((delta_lat/delta_lon)*LAT_DISTANCE*1000)/(TRES*3600))) #convert to s --> m/s
 			except:
@@ -1847,6 +1917,188 @@ def maenumerate(mArray):
 	    if maskedValue: 
 			yield index	
 #******************************************************************
+def bbox2ij(lon,lat,bbox):
+    '''
+    Purpose:: Return indices for i,j that will completely cover the specified bounding box.     
+    i0,i1,j0,j1 = bbox2ij(lon,lat,bbox)
+    
+    Inputs:: lon,lat: = 2D arrays that are the target of the subset
+    		  bbox: list containing the bounding box: [lon_min, lon_max, lat_min, lat_max]
+    
+    Outputs::
+
+
+    Adapted from: http://gis.stackexchange.com/questions/71630/subsetting-a-curvilinear-netcdf-file-roms-model-output-using-a-lon-lat-boundin
+
+    Example
+    -------  
+    >>> i0,i1,j0,j1 = bbox2ij(lon_rho,[-71, -63., 39., 46])
+    >>> h_subset = nc.variables['h'][j0:j1,i0:i1]       
+    '''
+
+    bbox=np.array(bbox)
+    mypath=np.array([bbox[[0,1,1,0]],bbox[[2,2,3,3]]]).T
+    p = path.Path(mypath)
+    points = np.vstack((lon.flatten(),lat.flatten())).T   
+    n,m = np.shape(lon)
+    inside = p.contains_points(points).reshape((n,m))
+    ii,jj = np.meshgrid(xrange(m),xrange(n))
+    return min(ii[inside]),max(ii[inside]),min(jj[inside]),max(jj[inside])
+#******************************************************************
+def getModelTimes(modelFile, timeVarName):
+    '''
+    Taken from the original RCMES 
+
+    TODO:  Do a better job handling dates here
+    Purpose:: Routine to convert from model times ('hours since 1900...', 'days since ...')
+    into a python datetime structure
+
+    Input::
+        modelFile - path to the model tile you want to extract the times list and modelTimeStep from
+        timeVarName - name of the time variable in the model file
+
+    Output::
+        times  - list of python datetime objects describing model data times
+        modelTimeStep - 'hourly','daily','monthly','annual'
+    '''
+
+    f = Dataset(modelFile,'r', format='NETCDF')
+    xtimes = f.variables[timeVarName]
+    timeFormat = xtimes.units #attributes['units']
+    
+    # search to check if 'since' appears in units
+    try:
+         sinceLoc = re.search('since', timeFormat).end()
+
+
+    #KDW the below block generates and error. But the print statement, indicates that sinceLoc found something
+    except AttributeError:
+         print 'Error decoding model times: time variable attributes do not contain "since"'
+         raise
+
+    units = ''
+    TIME_UNITS = ('minutes', 'hours', 'days', 'months', 'years')
+    # search for 'seconds','minutes','hours', 'days', 'months', 'years' so know units
+    for unit in TIME_UNITS:
+        if re.search(unit, timeFormat):
+            units = unit
+            break
+
+    # cut out base time (the bit following 'since')
+    base_time_string = string.lstrip(timeFormat[sinceLoc:])
+    
+    # decode base time
+    base_time = decodeTimeFromString(base_time_string)
+    
+    times = []
+
+    print "**** ", timeFormat
+    print units
+
+    xtime = int(timeFormat[-2:])
+    
+    for xtime in xtimes[:]:         
+        # Cast time as an int ***KDW remove this so fractional xtime can be read from MERG
+        xtime = int(xtime)
+
+        if units == 'minutes':
+            dt = datetime.timedelta(minutes=xtime)
+            new_time = base_time + dt
+        elif units == 'hours':
+            dt = datetime.timedelta(hours=xtime)
+            new_time = base_time + dt
+        elif units == 'days':
+            dt = datetime.timedelta(days=xtime)
+            new_time = base_time + dt
+        elif units == 'months':
+            # NB. adding months in python is complicated as month length varies and hence ambiguous.
+            # Perform date arithmatic manually
+            #  Assumption: the base_date will usually be the first of the month
+            #              NB. this method will fail if the base time is on the 29th or higher day of month
+            #                      -as can't have, e.g. Feb 31st.
+            new_month = int(base_time.month + xtime % 12)
+            new_year = int(math.floor(base_time.year + xtime / 12.))
+            new_time = datetime.datetime(new_year, new_month, base_time.day, base_time.hour, base_time.second, 0)
+        elif units == 'years':
+            dt = datetime.timedelta(years=xtime)
+            new_time = base_time + dt
+        
+        #print "xtime is:", xtime, "dt is: ", dt
+        
+        times.append(new_time)
+       
+    try:
+        timeStepLength = int(xtimes[1] - xtimes[0] + 1.e-12)
+        modelTimeStep = getModelTimeStep(units, timeStepLength)
+     
+        #KDW if timeStepLength is zero do not normalize times as this would create an empty list
+        if timeStepLength != 0:
+          times = normalizeDatetimes(times, modelTimeStep) 
+    except:
+        raise
+
+    return times, modelTimeStep
+#******************************************************************    
+def getModelTimeStep(units, stepSize):
+    # Time units are now determined. Determine the time intervals of input data (mdlTimeStep)
+
+    if units == 'minutes':
+        if stepSize == 60:
+            modelTimeStep = 'hourly'
+        elif stepSize == 1440:
+            modelTimeStep = 'daily'
+        # 28 days through 31 days
+        elif 40320 <= stepSize <= 44640:
+            modelTimeStep = 'monthly'
+        # 365 days through 366 days 
+        elif 525600 <= stepSize <= 527040:
+            modelTimeStep = 'annual' 
+        else:
+            raise Exception('model data time step interval exceeds the max time interval (annual)', units, stepSize)
+
+    elif units == 'hours':
+      #need a check for fractional hrs and only one hr i.e. stepSize=0
+        if stepSize == 0 or stepSize == 1:
+            modelTimeStep = 'hourly'
+        elif stepSize == 24:
+            modelTimeStep = 'daily'
+        elif 672 <= stepSize <= 744:
+            modelTimeStep = 'monthly' 
+        elif 8760 <= stepSize <= 8784:
+            modelTimeStep = 'annual' 
+        else:
+            raise Exception('model data time step interval exceeds the max time interval (annual)', units, stepSize)
+
+    elif units == 'days':
+        if stepSize == 1:
+            modelTimeStep = 'daily'
+        elif 28 <= stepSize <= 31:
+            modelTimeStep = 'monthly'
+        elif 365 <= stepSize <= 366:
+            modelTimeStep = 'annual'
+        else:
+            raise Exception('model data time step interval exceeds the max time interval (annual)', units, stepSize)
+
+    elif units == 'months':
+        if stepSize == 1:
+            modelTimeStep = 'monthly'
+        elif stepSize == 12:
+            modelTimeStep = 'annual'
+        else:
+            raise Exception('model data time step interval exceeds the max time interval (annual)', units, stepSize)
+
+    elif units == 'years':
+        if stepSize == 1:
+            modelTimeStep = 'annual'
+        else:
+            raise Exception('model data time step interval exceeds the max time interval (annual)', units, stepSize)
+
+    else:
+        errorMessage = 'the time unit ', units, ' is not currently handled in this version.'
+        raise Exception(errorMessage)
+
+    return modelTimeStep
+#******************************************************************    
 def createMainDirectory(mainDirStr):
 	'''
 	Purpose:: 
@@ -2001,6 +2253,7 @@ def findTime(curryr, currmm, currdd, currhr):
 		currdd += 1
 		if currdd > 30 and (currmm == 4 or currmm == 6 or currmm == 9 or currmm == 11):
 			currmm +=1
+			currdd = 1
 		elif currdd > 31 and (currmm == 1 or currmm ==3 or currmm == 5 or currmm == 7 or currmm == 8 or currmm == 10):
 			currmm +=1
 			currdd = 1
@@ -2182,6 +2435,7 @@ def postProcessingNetCDF(dataset, dirName = None):
 	firstTime = True
 	printLine = 0
 	lineNum = 1
+	colorbarInterval=2
 	#Just incase the X11 server is giving problems
 	subprocess.call('export DISPLAY=:0.0', shell=True)
 
@@ -2209,6 +2463,8 @@ def postProcessingNetCDF(dataset, dirName = None):
 		var = 'ch4'
 		ctlTitle = 'TITLE MERG DATA'
 		ctlLine = 'ch4=\>ch4     1  t,y,x    brightnesstemperature'
+		domainLatCmd = '\''+'set lat '+ LATMIN+' '+LATMAX+'\''+'\n'
+		domainLonCmd = '\''+'set lon '+ LONMIN+' '+LONMAX+'\''+'\n'
 		origsFile = coreDir+"/../GrADSscripts/cs1.gs"
 		sologsFile = coreDir+"/../GrADSscripts/infrared.gs"
 		lineNum = 54			
@@ -2279,11 +2535,13 @@ def postProcessingNetCDF(dataset, dirName = None):
 		subprocessCall = 'cp '+ origsFile+' '+sologsFile
 		subprocess.call(subprocessCall, shell=True)
 
+		colorbarFile = coreDir+"/../GrADSscripts/cbarnskip.gs"
+
 		ImgFilename = fnameNoExtension + '.gif'
 					
 		displayCmd = '\''+'d '+ var+'\''+'\n'
 		newFileCmd = '\''+'open '+ ctlFile1+'\''+'\n'
-		colorbarCmd = '\''+'run cbarn'+'\''+'\n'
+		colorbarCmd = '\''+'run ' + colorbarFile + ' '+str(colorbarInterval)+'\''+'\n'
 		printimCmd = '\''+'printim '+MAINDIRECTORY+'/images/'+ImgFilename+' x800 y600 white\''+'\n'
 		quitCmd = '\''+'quit'+'\''+'\n'
 			
@@ -2295,6 +2553,11 @@ def postProcessingNetCDF(dataset, dirName = None):
 		lines1.insert((lineNum+2), colorbarCmd)
 		lines1.insert((lineNum+3), printimCmd)
 		lines1.insert((lineNum + 4), quitCmd)
+
+		if dataset == 3:
+			lines1.insert((8),domainLatCmd)
+			lines1.insert((9),domainLonCmd)
+		
 		GrADSscript.writelines(lines1)
 		GrADSscript.close()
 		#run the script
@@ -2385,24 +2648,31 @@ def drawGraph (thisGraph, graphTitle, edgeWeight=None):
 	'''
 	
 	imgFilename = MAINDIRECTORY+'/images/'+ graphTitle+".gif"
-	fig=plt.figure(facecolor='white', figsize=(16,12)) 
+	fig=plt.figure(facecolor='white', figsize=(20,16), dpi=50) 
 	
-	edge95 = [(u,v) for (u,v,d) in thisGraph.edges(data=True) if d['weight'] == edgeWeight[0]]
-	edge90 = [(u,v) for (u,v,d) in thisGraph.edges(data=True) if d['weight'] == edgeWeight[1]]
+	edgeMax = [(u,v) for (u,v,d) in thisGraph.edges(data=True) if d['weight'] == edgeWeight[0]]
+	edgeMin = [(u,v) for (u,v,d) in thisGraph.edges(data=True) if d['weight'] == edgeWeight[1]]
 	edegeOverlap = [(u,v) for (u,v,d) in thisGraph.edges(data=True) if d['weight'] == edgeWeight[2]]
 
 	nx.write_dot(thisGraph, 'test.dot')
 	plt.title(graphTitle)
-	pos = nx.graphviz_layout(thisGraph, prog='dot')
+	pos = nx.graphviz_layout(thisGraph, prog='dot',args='-Goverlap=false -Gsize="8.00,10.25"')
 	#draw graph in parts
 	#nodes
-	nx.draw_networkx_nodes(thisGraph, pos, with_labels=True, arrows=False)
+	nx.draw_networkx_nodes(thisGraph, pos, with_labels=True, labeldistance=25, labelfontsize=40, arrows=False, args='-Gsize="8.00,10.25"', node_size=1, nodesep='0.75')#,size="7.75,10.25")
 	#edges
-	nx.draw_networkx_edges(thisGraph, pos, edgelist=edge95, alpha=0.5, arrows=False) 
-	nx.draw_networkx_edges(thisGraph, pos, edgelist=edge90,  edge_color='b', style='dashed', arrows=False)
+	nx.draw_networkx_edges(thisGraph, pos, edgelist=edgeMax, alpha=0.5, arrows=False) 
+	nx.draw_networkx_edges(thisGraph, pos, edgelist=edgeMin,  edge_color='b', style='dashed', arrows=False)
 	nx.draw_networkx_edges(thisGraph, pos, edgelist=edegeOverlap, edge_color='y', style='dashed', arrows=False)
 	#labels
-	nx.draw_networkx_labels(thisGraph,pos, arrows=False)
+	nx.draw_networkx_labels(thisGraph,pos, arrows=False, font_size=14,font_family='sans-serif')
+	
+	cut = 1.05 #1.00
+	xmax = cut * max(xx for xx, yy in pos.values())
+	ymax = cut * max(yy for xx, yy in pos.values())
+	plt.xlim(0, xmax)
+	plt.ylim(0, ymax)
+
 	plt.axis('off')
 	plt.savefig(imgFilename, facecolor=fig.get_facecolor(), transparent=True)
 	#do some clean up...and ensuring that we are in the right dir
@@ -2436,13 +2706,150 @@ def tempMaskedImages(imgFilename):
 	subprocess.call('echo "''\'set lon -40 30''\'" >> tempMaskedImages.gs', shell=True)
 	subprocess.call('echo "''\'set cint 10''\'" >> tempMaskedImages.gs', shell=True)
 	subprocess.call('echo "''\'set clevs 190 200 210 220 230 240 250''\'" >> tempMaskedImages.gs', shell=True)
+	subprocess.call('echo "''\'set gxout shaded''\'" >> tempMaskedImages.gs', shell=True)
 	subprocess.call('echo "''\'d ch4+75''\'" >> tempMaskedImages.gs', shell=True)
+	subprocess.call('echo "''\'run cbarn''\'" >> tempMaskedImages.gs', shell=True)
 	subprocess.call('echo "''\'draw title Masked Temp @ '+imgFilename +'\'" >> tempMaskedImages.gs', shell=True)
 	subprocess.call('echo "''\'printim '+imgFilename +' x1000 y800''\'" >> tempMaskedImages.gs', shell=True)
 	subprocess.call('echo "''\'quit''\'" >> tempMaskedImages.gs', shell=True)
 	gradscmd = 'grads -blc ' + '\'run tempMaskedImages.gs''\'' 
 	subprocess.call(gradscmd, shell=True)
 	return
+#******************************************************************
+def gridPointData(dirName,startTime, endTime,hour, filelist=None):
+	'''
+	TODO: break out into a class for the file manipulation
+	Purpose:: To grid (and interpolate) point data on the main (MERG) grid
+			  (written to open WWLLN lightning data (http://wwlln.net/) currently, see TODO)
+			  To allow for any data between the times to be gridded, even if some days are missing
+
+	Input:: dirname: a string representing the directory to where the point data files areaAvg
+			filelist: a list of strings representing the file names
+			fileFormat: a dictionary representing the format of the data columns
+
+	Output:: A number of netCDF files of the gridded point data
+
+	Assumptions: the original point data are available in date stamped files i.e. each file = 1 day and
+			are the same file format
+
+	'''
+
+	dataArray =[]
+	count =1
+
+	if filelist == None:
+		filelistInstructions = dirName + '/*'
+		filelist = glob.glob(filelistInstructions)
+
+
+	filelist.sort()
+	nfiles = len(filelist)
+
+	# Crash nicely if there are no files
+	if nfiles == 0:
+		print 'Error: no files in this directory! Exiting elegantly'
+		sys.exit()
+	else:
+		#create directory where the new files will be saved
+		os.chdir((dirName))
+		#create the subdirectories
+		try:	
+			os.makedirs('netCDFs')
+		except:
+			print "Directory exists already!!!"
+	
+	for file in filelist:
+		print "lightning file ", file
+		convertfunc = lambda x: datetime.strptime(x, "%Y/%m/%d")
+		convertfunc2 = lambda x: datetime.strptime(x[0:8], "%H:%M:%S")
+		fullDataArray = np.genfromtxt(file, delimiter=",", converters={0:convertfunc,1:convertfunc2})
+		
+		print "*************"
+		
+		#while the hr is correct, store the info in a temp array
+		for x in fullDataArray:
+			# print "hour ", hour
+			# print "de hr ", x[1]
+			# print "thishour ", str(x[1])[-9:-6]
+			if int(str(x[1])[-8:-6]) == hour:
+				dataArray.append((x))
+				count += 1
+			else:
+				break
+
+		#plot the points and the number of stations noticing the flash 
+		#get data
+		dataValues = [x[5] for x in dataArray]
+		dataLats = [x[2] for x in dataArray]
+		dataLons = [x[3] for x in dataArray]
+		#interpolate data unto grid
+		newData=griddata(dataLats, dataLons, dataValues, LON[:,0],LAT[0,:],interp='linear')
+		fig,ax = plt.subplots(1, facecolor='white', figsize=(10,8))
+
+		#map stuff 
+		map = Basemap(projection='merc', llcrnrlat=-5,urcrnrlat=30,llcrnrlon=-20,urcrnrlon=10,lat_ts=20,resolution='c')
+		map.drawcoastlines()
+		x,y=map(dataLons, dataLats)
+		map.scatter(x,y,marker='o',c=dataValues, cmap=cm.hsv)
+
+		plt.colorbar()
+		plt.title('scattering lightning data ')
+		plt.show()
+
+		
+		sys.exit()
+		# try:
+		# 	#open file into netCDF array
+		# 	convertfunc = lambda x: datetime.strptime(x, "%Y/%m/%d")
+		# 	convertfunc2 = lambda x: datetime.strptime(x[0:8], "%H:%M:%S")
+		# 	dataArray = np.genfromtxt(file, delimiter=",", converters={0:convertfunc,1:convertfunc2})
+			
+		# 	#interpolate data unto grid
+		# 	dataValues = [x[5] for x in dataArray]
+		# 	dataLats = [x[2] for x in dataArray]
+		# 	dataLons = [x[3] for x in dataArray]
+		# 	dataCoords = np.vstack((np.array(dataLats),np.array(dataLons)))
+		# 	newData=griddata(dataCoords, dataValues(LAT,LON), method='linear')
+		# 	plt.imshow(newData)
+
+		# 	sys.exit()
+
+		# 	#save as netcdf file
+
+		# except:
+		# 	print "File missing ", file
+			#create netcdf with missing value identifier -999
+	
+	return
+#******************************************************************
+def getMCCListFromFile():
+	'''
+	Purpose:: 
+		To extract each MCC node from the list in the textfile created 
+
+	Input::
+		None 
+
+	Output::
+		MCCListFromFile: a list of lists of strings representing each MCC in the file
+
+	'''
+	MCCListFromFile =[]
+	if os.path.exists(MAINDIRECTORY+"/textFiles"):
+		#check for the file
+		currFilename = MAINDIRECTORY+"/textFiles/MCSPostPrecessing.txt" 
+		if not os.path.isfile(currFilename):
+			print "file is missing! Filename: ", currFilename
+		else:
+			file_obj = open(currFilename, 'r')
+			for eachLine in file_obj:
+				eachLine = re.sub('[\[\]]','',eachLine)
+				lineList = re.sub("[^\w]"," ",eachLine).split()
+				MCCListFromFile.append(lineList)
+	else:
+		"Error path is inaccurate"
+
+	return MCCListFromFile		
 #******************************************************************
 # 
 #             METRICS FUNCTIONS FOR MERG.PY
@@ -2763,6 +3170,728 @@ def precipMaxMin(finalMCCList):
 	 
 	return MCSPrecip
 #******************************************************************
+def compareToMthlyTotal(MCCListOfLists, monthlyTRMM):
+	'''
+	Purpose:: To determine the percentage contribution of each MCC 
+		to the monthly total
+
+	Input:: MCCListOfLists: a list of lists of strings representing 
+		each node in each MCC (each list)
+			monthlyTRMM: a string representing the file (with path) of the TRMM file
+
+	Output:: a list of floating-points the percentage contribution 
+		a floating-point of the average contribution
+		a floating-point of the total contribution
+
+	'''
+
+	int nextMth = 0
+	int currMth = 0
+
+	for MCCList in MCCListOfLists:
+		firstNode = MCCList[0]
+		firstNodeDateTime = thisDict(MCCList[0])
+		if firstNodeDateTime['cloudElementTime'][5:7] == nextMth:
+			#close currMthFile #currMthFile.close
+			#generate graphic for that month of data
+			# and stats for that mth 
+			#assign currMth dict to {}
+			#firstTimeFlag == True
+
+		for eachNode in MCCList:
+			thisNodeTimeDate = thisDict[0]
+			thisNodeYear = thisNodeTimeDate[0:4]
+			thisNodeMth = thisNodeTimeDate[5:7]
+			if firstTimeFlag == True:
+				currMth = int(thisNodeMth)
+				currYr = int(thisNodeYear)
+				firstTimeFlag = False
+				currMthDate = openMthlyTRMM(currMth)
+
+			if int(thisNodeMth) == currMth and int(thisNodeYear) == currYr:
+				#compareMCCToMthlyTotal()
+				openNodeTRMMRR(eachNode)
+			else:
+				nextMth = int(thisNodeMth)
+				nextMthDict = openMthlyTRMM(nextMth)
+				#compareMCCToMthlyTotal()
+
+
+		#leave the clipping until the end
+		#get the relevant TRMM info 
+		allMCCsPrecip = regriddedTRMM[latStartIndexOffset:(latEndIndexOffset+1), lonStartIndexOffset:(lonEndIndexOffset+1)]
+		
+		#get the relevant TRMM info from the monthly file
+		mthlyPrecipRate = regriddedmthlyTRMM[latStartIndexOffset:(latEndIndexOffset+1), lonStartIndexOffset:(lonEndIndexOffset+1)]
+		
+		eachCellContribution = ma.zeros(mthlyPrecipRate.shape)
+		eachCellContribution = allMCCsPrecip/mthlyPrecipRate
+		eachContributionLess = ma.masked_array(eachCellContribution, mask=(eachCellContribution >= 1.0))
+		eachContributionMore = ma.masked_array(eachCellContribution, mask=(eachCellContribution <= 1.0))
+		
+		# generate plot info and create the plots
+		#viewMthlyTotals(eachCellContribution,latBandMin, latBandMax, lonBandMin, lonBandMax)
+		title = 'Each MCC contribution to the monthly TRMM total'
+		imgFilename = MAINDIRECTORY+'/images/MCCContribution.gif'
+		clevs = np.arange(0,100,5)
+		infoDict ={'dataset':eachContributionLess*100.0, 'imgFilename':imgFilename, 'title':title,'clevs':clevs, 'latBandMin': latBandMin, 'latBandMax': latBandMax, 'lonBandMin': lonBandMin, 'lonBandMax': lonBandMax}
+		viewMthlyTotals(infoDict)
+		#viewMthlyTotals(eachContributionLess*100.0,title, imgFilename, latBandMin, latBandMax, lonBandMin, lonBandMax)
+		
+		title = 'MCC contributions that exceed the monthly TRMM total'
+		imgFilename = MAINDIRECTORY+'/images/MCCexceedTRMM.gif'	
+		clevs = np.arange(100,float(np.max(eachContributionMore))*100 + 5,5)
+		infoDict ={'dataset':eachContributionMore*100.0, 'imgFilename':imgFilename, 'title':title,'clevs':clevs, 'latBandMin': latBandMin, 'latBandMax': latBandMax, 'lonBandMin': lonBandMin, 'lonBandMax': lonBandMax}
+		viewMthlyTotals(infoDict)
+
+#******************************************************************
+def compareToMthlyTotalOld(MCCListOfLists, monthlyTRMM):
+	'''
+	Purpose:: To determine the percentage contribution of each MCC 
+		to the monthly total
+
+	Input:: MCCListOfLists: a list of lists of strings representing 
+		each node in each MCC (each list)
+			monthlyTRMM: a string representing the file (with path) of the TRMM file
+
+	Output:: a list of floating-points the percentage contribution 
+		a floating-point of the average contribution
+		a floating-point of the total contribution
+
+	'''
+	firstTime = False
+	mccCount = 0
+	MCCsContribution =[] #list to hold each MCCs contribution to the monthly RR as a ratio
+	eachMCCtotal = [] 
+	eachMCCTotalCmpToMth = []
+	latBandMin = 5.0 #floating point representing the min lat for the region being considered
+	latBandMax = 20.0 #floating point representing the max lat for the region being considered
+	lonBandMin = -15.0 #floating point representing the min lon for the region being considered
+	lonBandMax = 10.0 #floating point representing the max lon for the region being considered	
+
+	# these strings are specific to the MERG data
+	mergVarName = 'ch4'
+	mergTimeVarName = 'time'
+	mergLatVarName = 'latitude'
+	mergLonVarName = 'longitude'
+
+	#open a fulldisk merg file to get the full dimensions 
+	#TODO: find a neater way of doing this
+	tmp = Nio.open_file("/Users/kimwhitehall/Documents/HU/postDoc/paper/mergNETCDF/merg_2013080923_4km-pixel.nc", format='nc')
+	
+	#clip the lat/lon grid according to user input
+	#http://www.pyngl.ucar.edu/NioExtendedSelection.shtml
+	#TODO: figure out how to use netCDF4 to do the clipping tmp = netCDF4.Dataset(filelist[0])
+	latsraw = tmp.variables[mergLatVarName][:].astype('f2')
+	lonsraw = tmp.variables[mergLonVarName][:].astype('f2')
+	lonsraw[lonsraw > 180] = lonsraw[lonsraw > 180] - 360.  # convert to -180,180 if necessary
+	
+	LON, LAT = np.meshgrid(lonsraw, latsraw)
+	nygrd = len(LAT[:, 0]); nxgrd = len(LON[0, :])
+	
+	# #TODO: determine the monthly data file to be opened as opposed to hard coding it
+	# #open the monthly data
+	# TRMMmthData = Dataset(monthlyTRMM,'r',format='NETCDF4')
+	# #convert precip rate mm/hr to monthly value i.e. *(24*31) as Jul in this case
+	# mthlyPrecipRate = (TRMMmthData.variables['pcp'][:,:,:])*24*31
+	# latsrawTRMMData = TRMMmthData.variables['latitude'][:]
+	# lonsrawTRMMData = TRMMmthData.variables['longitude'][:]
+	# lonsrawTRMMData[lonsrawTRMMData > 180] = lonsrawTRMMData[lonsrawTRMMData>180] - 360.
+	# LONTRMM, LATTRMM = np.meshgrid(lonsrawTRMMData, latsrawTRMMData)
+
+	# nygrdTRMM = len(LATTRMM[:,0]); nxgrdTRMM = len(LONTRMM[0,:])
+	
+	# mthlyPrecipRateMasked = ma.masked_array(mthlyPrecipRate, mask=(mthlyPrecipRate < 0.0))
+	# mthlyPrecipRate =[]
+	
+	# #regrid the monthly dataset to the MERG grid as the TRMMNETCDFCEs are 4km regridded as well. 
+	# #---------regrid the TRMM data to the MERG dataset ----------------------------------
+	# #regrid using the do_regrid stuff from the Apache OCW 
+	# regriddedmthlyTRMM = ma.zeros((1, nygrd, nxgrd))
+	# #TODO: **ThE PROBLEM **** this regridding is an issue because the regrid occurs only over the lat lons given in the main prog and not
+	# #necessarily the lat lons given for the mthlyprecip domain
+	# #dirty fix: open a full original merg file to get reset the LAT LONS values
+	# regriddedmthlyTRMM = process.do_regrid(mthlyPrecipRateMasked[0,:,:], LATTRMM,  LONTRMM, LAT, LON, order=1, mdi= -999999999)
+	# regriddedTRMM = ma.zeros((regriddedmthlyTRMM.shape))
+	# #----------------------------------------------------------------------------------
+	# #get the lat/lon info for TRMM data (different resolution)
+	# latStartT = find_nearest(latsrawTRMMData, latBandMin)
+	# latEndT = find_nearest(latsrawTRMMData, latBandMax)
+	# lonStartT = find_nearest(lonsrawTRMMData, lonBandMin)
+	# lonEndT = find_nearest(lonsrawTRMMData, lonBandMax)
+
+	# latStartIndex = np.where(latsrawTRMMData == latStartT)
+	# latEndIndex = np.where(latsrawTRMMData == latEndT)
+	# lonStartIndex = np.where(lonsrawTRMMData == lonStartT)
+	# lonEndIndex = np.where(lonsrawTRMMData == lonEndT)
+
+
+	# latStartT = find_nearest(LAT[:,0], latBandMin)
+	# latEndT = find_nearest(LAT[:,0], latBandMax)
+	# lonStartT = find_nearest(LON[0,:], lonBandMin)
+	# lonEndT = find_nearest(LON[0,:], lonBandMax)
+	# latStartIndex = np.where(LAT[:,0] == latStartT)
+	# latEndIndex = np.where(LAT[:,0] == latEndT)
+	# lonStartIndex = np.where(LON[0,:] == lonStartT)
+	# lonEndIndex = np.where(LON[0,:] == lonEndT)
+	# latStartIndexOffset = latStartIndex[0][0]
+	# latEndIndexOffset = latEndIndex[0][0]
+	# lonStartIndexOffset = lonStartIndex[0][0]
+	# lonEndIndexOffset = lonEndIndex[0][0]
+
+	# #get the relevant TRMM info from the monthly file
+	# mthlyPrecipRate = regriddedmthlyTRMM[latStartIndexOffset:latEndIndexOffset, lonStartIndexOffset:lonEndIndexOffset]
+					
+	# TRMMmthData.close()	
+		
+	#we will be using TRMM CE data only
+	dirName = MAINDIRECTORY+'/TRMMnetcdfCEs'
+	if not os.path.exists(dirName):
+		print "Error in the directory"
+	else:
+		os.chdir((dirName))
+		
+	for eachlist in MCCListOfLists:
+		if eachlist:
+			mccCount +=1
+			firstTime = True
+
+			for eachNode in eachlist:
+				#determine the filename to check, we will be using TRMM only
+				cmdLine = 'ls *'+ eachNode + '.nc' #'*.nc'
+				fileNameCmd = subprocess.Popen(cmdLine, stdout=subprocess.PIPE, shell=True)
+				#ensure whitespaces at beginning and end are stripped
+				fileName = (dirName+'/'+fileNameCmd.communicate()[0]).strip()
+				
+				#open file and create accumulation file (compare against the monthly one time too?)
+				if os.path.exists(fileName):	
+					#TODO: check if this file belongs to the current mthly TRMM file or, will it belong to the following mth
+
+					#open NetCDF file add info to the accu 
+					TRMMCEData = Dataset(fileName,'r',format='NETCDF4')
+					precipRate = TRMMCEData.variables['precipitation_Accumulation'][:]
+					lats = TRMMCEData.variables['latitude'][:]
+					lons = TRMMCEData.variables['longitude'][:]
+					lat_min = lats[0]
+					lat_max = lats[-1]
+					lon_min = lons[0]
+					lon_max = lons[-1]
+
+					LONTRMM, LATTRMM = np.meshgrid(lons,lats)
+					nygrdTRMM = len(LATTRMM[:,0]) 
+					nxgrdTRMM = len(LONTRMM[0,:])
+					
+					precipRate = ma.masked_array(precipRate, mask=(precipRate < 0.0))
+					TRMMCEData.close()
+				else:
+					print "nah dread it aint here"
+					#TODO: exit elegantly 
+					sys.exit()
+				
+				if firstTime == True:
+					#then clip the monthly dataset
+					#find the min & max lat and lon of the TRMMNETCDF dataset and extract that data from the mthly file
+					latStartIndex = np.where(LAT[:,0]==LATTRMM[0][0])[0][0]
+					latEndIndex = np.where(LAT[:,0]==LATTRMM[-1][0])[0][0]
+					lonStartIndex = np.where(LON[0,:]==LONTRMM[0][0])[0][0]
+					lonEndIndex = np.where(LON[0,:]==LONTRMM[0][-1])[0][0]
+					accuPrecipRate = ma.zeros((precipRate.shape))
+					firstTime = False
+				else:
+					accuPrecipRate += precipRate
+	
+				#create new netCDF file to write the accumulated RR associated with the MCC
+				#can remove here for checking purposes
+				accuMCCFile = MAINDIRECTORY+'/TRMMnetcdfCEs/accuMCC'+str(mccCount)+'.nc'	
+				accuMCCData = Dataset(accuMCCFile, 'w', format='NETCDF4')
+				accuMCCData.description =  'Accumulated precipitation data'
+				accuMCCData.calendar = 'standard'
+				accuMCCData.conventions = 'COARDS'
+				# dimensions
+				accuMCCData.createDimension('time', None)
+				accuMCCData.createDimension('lat', nygrdTRMM)
+				accuMCCData.createDimension('lon', nxgrdTRMM)
+				# variables
+				MCCprecip = ('time','lat', 'lon',)
+				times = accuMCCData.createVariable('time', 'f8', ('time',))
+				latitude = accuMCCData.createVariable('latitude', 'f8', ('lat',))
+				longitude = accuMCCData.createVariable('longitude', 'f8', ('lon',))
+				rainFallacc = accuMCCData.createVariable('precipitation_Accumulation', 'f8',MCCprecip)
+				rainFallacc.units = 'mm'
+
+				longitude[:] = LONTRMM[0,:]
+				longitude.units = "degrees_east" 
+				longitude.long_name = "Longitude" 
+
+				latitude[:] =  LATTRMM[:,0]
+				latitude.units = "degrees_north"
+				latitude.long_name ="Latitude"
+
+				rainFallacc[:] = accuPrecipRate[:]
+
+				accuMCCData.close()
+				#end writing the file
+				
+			regriddedTRMM[latStartIndex:(latEndIndex +1),lonStartIndex:(lonEndIndex+1)] += np.squeeze(accuPrecipRate, axis=0)
+			
+			#append total of that MCC to totalMCCsInMth
+			eachMCCtotal.append(accuPrecipRate.sum())
+
+			#append the % contribution of the MCC to the month total within the domain
+			eachMCCTotalCmpToMth.append(accuPrecipRate.sum()/regriddedmthlyTRMM[latStartIndex:(latEndIndex +1),lonStartIndex:(lonEndIndex+1)].sum())
+	
+	#leave the clipping until the end
+	#get the relevant TRMM info 
+	allMCCsPrecip = regriddedTRMM[latStartIndexOffset:(latEndIndexOffset+1), lonStartIndexOffset:(lonEndIndexOffset+1)]
+	
+	#get the relevant TRMM info from the monthly file
+	mthlyPrecipRate = regriddedmthlyTRMM[latStartIndexOffset:(latEndIndexOffset+1), lonStartIndexOffset:(lonEndIndexOffset+1)]
+	
+	eachCellContribution = ma.zeros(mthlyPrecipRate.shape)
+	eachCellContribution = allMCCsPrecip/mthlyPrecipRate
+	eachContributionLess = ma.masked_array(eachCellContribution, mask=(eachCellContribution >= 1.0))
+	eachContributionMore = ma.masked_array(eachCellContribution, mask=(eachCellContribution <= 1.0))
+	
+	# generate plot info and create the plots
+
+	#viewMthlyTotals(eachCellContribution,latBandMin, latBandMax, lonBandMin, lonBandMax)
+	title = 'Each MCC contribution to the monthly TRMM total'
+	imgFilename = MAINDIRECTORY+'/images/MCCContribution.gif'
+	clevs = np.arange(0,100,5)
+	infoDict ={'dataset':eachContributionLess*100.0, 'imgFilename':imgFilename, 'title':title,'clevs':clevs, 'latBandMin': latBandMin, 'latBandMax': latBandMax, 'lonBandMin': lonBandMin, 'lonBandMax': lonBandMax}
+	viewMthlyTotals(infoDict)
+	#viewMthlyTotals(eachContributionLess*100.0,title, imgFilename, latBandMin, latBandMax, lonBandMin, lonBandMax)
+	
+	title = 'MCC contributions that exceed the monthly TRMM total'
+	imgFilename = MAINDIRECTORY+'/images/MCCexceedTRMM.gif'	
+	clevs = np.arange(100,float(np.max(eachContributionMore))*100 + 5,5)
+	infoDict ={'dataset':eachContributionMore*100.0, 'imgFilename':imgFilename, 'title':title,'clevs':clevs, 'latBandMin': latBandMin, 'latBandMax': latBandMax, 'lonBandMin': lonBandMin, 'lonBandMax': lonBandMax}
+	viewMthlyTotals(infoDict)
+	#viewMthlyTotals(eachContributionMore*100.0,title, imgFilename, latBandMin, latBandMax, lonBandMin, lonBandMax)
+#******************************************************************
+def compareToMthlyTotalCall(starttime, endtime):
+	'''
+	Purpose:: 
+		To determine the monthly contribution between some time period
+
+	Input:: 
+		starttime: a string representing the time to start the accumulations format yyyy-mm-dd_hh:mm:ss
+		endtime: a string representing the time to end the accumulations format yyyy-mm-dd_hh:mm:ss
+	
+	Output:: 
+		None
+	'''
+
+	currmth = 0
+	sTime = datetime.strptime(starttime.replace("_"," "),'%Y-%m-%d %H:%M:%S')
+	eTime = datetime.strptime(endtime.replace("_"," "),'%Y-%m-%d %H:%M:%S')
+	thisTime = sTime
+
+	MCCListOfListsForTheMonth = getMCCListFromFile()
+
+	while thisTime <= eTime:
+		month = thisTime[5:7]
+		year = thisTime[:4]
+		if currmth = 0:
+			#open the file
+			thisMthData = openMthlyTRMM(year,month)
+			compareToMthlyTotal(MCCListOfListsForTheMonth, thisMthData)
+		elif int(month) != currmth:
+			nextMthData = openMthlyTRMM(year,month)
+			compareToMthlyTotal(MCCListOfListsForTheMonth, nextMthData)
+		# elif month == currmth:
+		# 	#do the compareToMthlyTotal in same TRMM file,
+
+		# 	currmth = month
+		# else:
+		# 	#if month greater
+#******************************************************************
+def openMthlyTRMM(year,mth):
+	'''
+	'''
+	monthlyTRMM = "~/mthlyData/3B43."+year+mth+"01.7A.nc"
+	#TODO: determine the monthly data file to be opened as opposed to hard coding it
+	#open the monthly data
+	TRMMmthData = Dataset(monthlyTRMM,'r',format='NETCDF4')
+	#convert precip rate mm/hr to monthly value i.e. *(24*31) as Jul in this case
+	mthlyPrecipRate = (TRMMmthData.variables['pcp'][:,:,:])*24*31
+	latsrawTRMMData = TRMMmthData.variables['latitude'][:]
+	lonsrawTRMMData = TRMMmthData.variables['longitude'][:]
+	lonsrawTRMMData[lonsrawTRMMData > 180] = lonsrawTRMMData[lonsrawTRMMData>180] - 360.
+	LONTRMM, LATTRMM = np.meshgrid(lonsrawTRMMData, latsrawTRMMData)
+
+	nygrdTRMM = len(LATTRMM[:,0]); nxgrdTRMM = len(LONTRMM[0,:])
+	
+	mthlyPrecipRateMasked = ma.masked_array(mthlyPrecipRate, mask=(mthlyPrecipRate < 0.0))
+	mthlyPrecipRate =[]
+	
+	#regrid the monthly dataset to the MERG grid as the TRMMNETCDFCEs are 4km regridded as well. 
+	#---------regrid the TRMM data to the MERG dataset ----------------------------------
+	#regrid using the do_regrid stuff from the Apache OCW 
+	regriddedmthlyTRMM = ma.zeros((1, nygrd, nxgrd))
+	#TODO: **ThE PROBLEM **** this regridding is an issue because the regrid occurs only over the lat lons given in the main prog and not
+	#necessarily the lat lons given for the mthlyprecip domain
+	#dirty fix: open a full original merg file to get reset the LAT LONS values
+	regriddedmthlyTRMM = process.do_regrid(mthlyPrecipRateMasked[0,:,:], LATTRMM,  LONTRMM, LAT, LON, order=1, mdi= -999999999)
+	regriddedTRMM = ma.zeros((regriddedmthlyTRMM.shape))
+	#----------------------------------------------------------------------------------
+	#get the lat/lon info for TRMM data (different resolution)
+	latStartT = find_nearest(latsrawTRMMData, latBandMin)
+	latEndT = find_nearest(latsrawTRMMData, latBandMax)
+	lonStartT = find_nearest(lonsrawTRMMData, lonBandMin)
+	lonEndT = find_nearest(lonsrawTRMMData, lonBandMax)
+
+	latStartIndex = np.where(latsrawTRMMData == latStartT)
+	latEndIndex = np.where(latsrawTRMMData == latEndT)
+	lonStartIndex = np.where(lonsrawTRMMData == lonStartT)
+	lonEndIndex = np.where(lonsrawTRMMData == lonEndT)
+
+
+	latStartT = find_nearest(LAT[:,0], latBandMin)
+	latEndT = find_nearest(LAT[:,0], latBandMax)
+	lonStartT = find_nearest(LON[0,:], lonBandMin)
+	lonEndT = find_nearest(LON[0,:], lonBandMax)
+	latStartIndex = np.where(LAT[:,0] == latStartT)
+	latEndIndex = np.where(LAT[:,0] == latEndT)
+	lonStartIndex = np.where(LON[0,:] == lonStartT)
+	lonEndIndex = np.where(LON[0,:] == lonEndT)
+	latStartIndexOffset = latStartIndex[0][0]
+	latEndIndexOffset = latEndIndex[0][0]
+	lonStartIndexOffset = lonStartIndex[0][0]
+	lonEndIndexOffset = lonEndIndex[0][0]
+
+	#get the relevant TRMM info from the monthly file
+	mthlyPrecipRate = regriddedmthlyTRMM[latStartIndexOffset:latEndIndexOffset, lonStartIndexOffset:lonEndIndexOffset]
+					
+	TRMMmthData.close()	
+
+	return mth
+#******************************************************************
+def openTRMMRR(eachNode):
+	'''
+	Purpose::
+
+	Input::
+
+	Output::
+
+	'''
+	#we will be using TRMM CE data only
+	dirName = MAINDIRECTORY+'/TRMMnetcdfCEs'
+	if not os.path.exists(dirName):
+		print "Error in the directory"
+	else:
+		os.chdir((dirName))
+		
+	#determine the filename to check, we will be using TRMM only
+	cmdLine = 'ls *'+ eachNode + '.nc' #'*.nc'
+	fileNameCmd = subprocess.Popen(cmdLine, stdout=subprocess.PIPE, shell=True)
+	#ensure whitespaces at beginning and end are stripped
+	fileName = (dirName+'/'+fileNameCmd.communicate()[0]).strip()
+	
+	#open file and create accumulation file (compare against the monthly one time too?)
+	if os.path.exists(fileName):	
+		#open NetCDF file add info to the accu 
+		TRMMCEData = Dataset(fileName,'r',format='NETCDF4')
+		precipRate = TRMMCEData.variables['precipitation_Accumulation'][:]
+		lats = TRMMCEData.variables['latitude'][:]
+		lons = TRMMCEData.variables['longitude'][:]
+		lat_min = lats[0]
+		lat_max = lats[-1]
+		lon_min = lons[0]
+		lon_max = lons[-1]
+
+		LONTRMM, LATTRMM = np.meshgrid(lons,lats)
+		nygrdTRMM = len(LATTRMM[:,0]) 
+		nxgrdTRMM = len(LONTRMM[0,:])
+		
+		precipRate = ma.masked_array(precipRate, mask=(precipRate < 0.0))
+		TRMMCEData.close()
+	else:
+		print "nah dread it aint here"
+		#TODO: exit elegantly 
+		sys.exit()
+
+	if firstTime == True:
+		#then clip the monthly dataset
+		#find the min & max lat and lon of the TRMMNETCDF dataset and extract that data from the mthly file
+		latStartIndex = np.where(LAT[:,0]==LATTRMM[0][0])[0][0]
+		latEndIndex = np.where(LAT[:,0]==LATTRMM[-1][0])[0][0]
+		lonStartIndex = np.where(LON[0,:]==LONTRMM[0][0])[0][0]
+		lonEndIndex = np.where(LON[0,:]==LONTRMM[0][-1])[0][0]
+		accuPrecipRate = ma.zeros((precipRate.shape))
+		firstTime = False
+
+	accuPrecipRate += precipRate
+	accuMCCData.close()
+
+	return latStartIndex, latEndIndex, lonStartIndex, lonEndIndex
+	
+	
+	# #create new netCDF file to write the accumulated RR associated with the MCC
+	# #can remove here for checking purposes
+	# accuMCCFile = MAINDIRECTORY+'/TRMMnetcdfCEs/accuMCC'+str(mccCount)+'.nc'	
+	# accuMCCData = Dataset(accuMCCFile, 'w', format='NETCDF4')
+	# accuMCCData.description =  'Accumulated precipitation data'
+	# accuMCCData.calendar = 'standard'
+	# accuMCCData.conventions = 'COARDS'
+	# # dimensions
+	# accuMCCData.createDimension('time', None)
+	# accuMCCData.createDimension('lat', nygrdTRMM)
+	# accuMCCData.createDimension('lon', nxgrdTRMM)
+	# # variables
+	# MCCprecip = ('time','lat', 'lon',)
+	# times = accuMCCData.createVariable('time', 'f8', ('time',))
+	# latitude = accuMCCData.createVariable('latitude', 'f8', ('lat',))
+	# longitude = accuMCCData.createVariable('longitude', 'f8', ('lon',))
+	# rainFallacc = accuMCCData.createVariable('precipitation_Accumulation', 'f8',MCCprecip)
+	# rainFallacc.units = 'mm'
+
+	# longitude[:] = LONTRMM[0,:]
+	# longitude.units = "degrees_east" 
+	# longitude.long_name = "Longitude" 
+
+	# latitude[:] =  LATTRMM[:,0]
+	# latitude.units = "degrees_north"
+	# latitude.long_name ="Latitude"
+
+	# rainFallacc[:] = accuPrecipRate[:]
+
+	
+	#end writing the file
+	
+# regriddedTRMM[latStartIndex:(latEndIndex +1),lonStartIndex:(lonEndIndex+1)] += np.squeeze(accuPrecipRate, axis=0)
+
+# #append total of that MCC to totalMCCsInMth
+# eachMCCtotal.append(accuPrecipRate.sum())
+
+# #append the % contribution of the MCC to the month total within the domain
+# eachMCCTotalCmpToMth.append(accuPrecipRate.sum()/regriddedmthlyTRMM[latStartIndex:(latEndIndex +1),lonStartIndex:(lonEndIndex+1)].sum())
+#******************************************************************
+# def compareToMthlyTotal(MCCListOfLists, monthlyTRMM):
+# 	'''
+# 	Purpose:: To determine the percentage contribution of each MCC 
+# 		to the monthly total
+
+# 	Input:: MCCListOfLists: a list of lists of strings representing 
+# 		each node in each MCC (each list)
+# 			monthlyTRMM: a string representing the file (with path) of the TRMM file
+
+# 	Output:: a list of floating-points the percentage contribution 
+# 		a floating-point of the average contribution
+# 		a floating-point of the total contribution
+
+# 	'''
+# 	firstTime = False
+# 	mccCount = 0
+# 	MCCsContribution =[] #list to hold each MCCs contribution to the monthly RR as a ratio
+# 	eachMCCtotal = [] 
+# 	eachMCCTotalCmpToMth = []
+# 	latBandMin = 5.0 #floating point representing the min lat for the region being considered
+# 	latBandMax = 20.0 #floating point representing the max lat for the region being considered
+# 	lonBandMin = -15.0 #floating point representing the min lon for the region being considered
+# 	lonBandMax = 10.0 #floating point representing the max lon for the region being considered	
+
+# 	# these strings are specific to the MERG data
+# 	mergVarName = 'ch4'
+# 	mergTimeVarName = 'time'
+# 	mergLatVarName = 'latitude'
+# 	mergLonVarName = 'longitude'
+
+# 	#open a fulldisk merg file to get the full dimensions 
+# 	#TODO: find a neater way of doing this
+# 	tmp = Nio.open_file("/Users/kimwhitehall/Documents/HU/postDoc/paper/mergNETCDF/merg_2013080923_4km-pixel.nc", format='nc')
+	
+# 	#clip the lat/lon grid according to user input
+# 	#http://www.pyngl.ucar.edu/NioExtendedSelection.shtml
+# 	#TODO: figure out how to use netCDF4 to do the clipping tmp = netCDF4.Dataset(filelist[0])
+# 	latsraw = tmp.variables[mergLatVarName][:].astype('f2')
+# 	lonsraw = tmp.variables[mergLonVarName][:].astype('f2')
+# 	lonsraw[lonsraw > 180] = lonsraw[lonsraw > 180] - 360.  # convert to -180,180 if necessary
+	
+# 	LON, LAT = np.meshgrid(lonsraw, latsraw)
+# 	nygrd = len(LAT[:, 0]); nxgrd = len(LON[0, :])
+	
+# 	#TODO: determine the monthly data file to be opened as opposed to hard coding it
+# 	#open the monthly data
+# 	TRMMmthData = Dataset(monthlyTRMM,'r',format='NETCDF4')
+# 	#convert precip rate mm/hr to monthly value i.e. *(24*31) as Jul in this case
+# 	mthlyPrecipRate = (TRMMmthData.variables['pcp'][:,:,:])*24*31
+# 	latsrawTRMMData = TRMMmthData.variables['latitude'][:]
+# 	lonsrawTRMMData = TRMMmthData.variables['longitude'][:]
+# 	lonsrawTRMMData[lonsrawTRMMData > 180] = lonsrawTRMMData[lonsrawTRMMData>180] - 360.
+# 	LONTRMM, LATTRMM = np.meshgrid(lonsrawTRMMData, latsrawTRMMData)
+
+# 	nygrdTRMM = len(LATTRMM[:,0]); nxgrdTRMM = len(LONTRMM[0,:])
+	
+# 	mthlyPrecipRateMasked = ma.masked_array(mthlyPrecipRate, mask=(mthlyPrecipRate < 0.0))
+# 	mthlyPrecipRate =[]
+	
+# 	#regrid the monthly dataset to the MERG grid as the TRMMNETCDFCEs are 4km regridded as well. 
+# 	#---------regrid the TRMM data to the MERG dataset ----------------------------------
+# 	#regrid using the do_regrid stuff from the Apache OCW 
+# 	regriddedmthlyTRMM = ma.zeros((1, nygrd, nxgrd))
+# 	#TODO: **ThE PROBLEM **** this regridding is an issue because the regrid occurs only over the lat lons given in the main prog and not
+# 	#necessarily the lat lons given for the mthlyprecip domain
+# 	#dirty fix: open a full original merg file to get reset the LAT LONS values
+# 	regriddedmthlyTRMM = process.do_regrid(mthlyPrecipRateMasked[0,:,:], LATTRMM,  LONTRMM, LAT, LON, order=1, mdi= -999999999)
+# 	regriddedTRMM = ma.zeros((regriddedmthlyTRMM.shape))
+# 	#----------------------------------------------------------------------------------
+# 	#get the lat/lon info for TRMM data (different resolution)
+# 	latStartT = find_nearest(latsrawTRMMData, latBandMin)
+# 	latEndT = find_nearest(latsrawTRMMData, latBandMax)
+# 	lonStartT = find_nearest(lonsrawTRMMData, lonBandMin)
+# 	lonEndT = find_nearest(lonsrawTRMMData, lonBandMax)
+
+# 	latStartIndex = np.where(latsrawTRMMData == latStartT)
+# 	latEndIndex = np.where(latsrawTRMMData == latEndT)
+# 	lonStartIndex = np.where(lonsrawTRMMData == lonStartT)
+# 	lonEndIndex = np.where(lonsrawTRMMData == lonEndT)
+
+
+# 	latStartT = find_nearest(LAT[:,0], latBandMin)
+# 	latEndT = find_nearest(LAT[:,0], latBandMax)
+# 	lonStartT = find_nearest(LON[0,:], lonBandMin)
+# 	lonEndT = find_nearest(LON[0,:], lonBandMax)
+# 	latStartIndex = np.where(LAT[:,0] == latStartT)
+# 	latEndIndex = np.where(LAT[:,0] == latEndT)
+# 	lonStartIndex = np.where(LON[0,:] == lonStartT)
+# 	lonEndIndex = np.where(LON[0,:] == lonEndT)
+# 	latStartIndexOffset = latStartIndex[0][0]
+# 	latEndIndexOffset = latEndIndex[0][0]
+# 	lonStartIndexOffset = lonStartIndex[0][0]
+# 	lonEndIndexOffset = lonEndIndex[0][0]
+
+# 	#get the relevant TRMM info from the monthly file
+# 	mthlyPrecipRate = regriddedmthlyTRMM[latStartIndexOffset:latEndIndexOffset, lonStartIndexOffset:lonEndIndexOffset]
+					
+# 	TRMMmthData.close()	
+		
+# 	#we will be using TRMM CE data only
+# 	dirName = MAINDIRECTORY+'/TRMMnetcdfCEs'
+# 	if not os.path.exists(dirName):
+# 		print "Error in the directory"
+# 	else:
+# 		os.chdir((dirName))
+		
+# 	for eachlist in MCCListOfLists:
+# 		if eachlist:
+# 			mccCount +=1
+# 			firstTime = True
+
+# 			for eachNode in eachlist:
+# 				#determine the filename to check, we will be using TRMM only
+# 				cmdLine = 'ls *'+ eachNode + '.nc' #'*.nc'
+# 				fileNameCmd = subprocess.Popen(cmdLine, stdout=subprocess.PIPE, shell=True)
+# 				#ensure whitespaces at beginning and end are stripped
+# 				fileName = (dirName+'/'+fileNameCmd.communicate()[0]).strip()
+				
+# 				#open file and create accumulation file (compare against the monthly one time too?)
+# 				if os.path.exists(fileName):	
+# 					#TODO: check if this file belongs to the current mthly TRMM file or, will it belong to the following mth
+
+# 					#open NetCDF file add info to the accu 
+# 					TRMMCEData = Dataset(fileName,'r',format='NETCDF4')
+# 					precipRate = TRMMCEData.variables['precipitation_Accumulation'][:]
+# 					lats = TRMMCEData.variables['latitude'][:]
+# 					lons = TRMMCEData.variables['longitude'][:]
+# 					lat_min = lats[0]
+# 					lat_max = lats[-1]
+# 					lon_min = lons[0]
+# 					lon_max = lons[-1]
+
+# 					LONTRMM, LATTRMM = np.meshgrid(lons,lats)
+# 					nygrdTRMM = len(LATTRMM[:,0]) 
+# 					nxgrdTRMM = len(LONTRMM[0,:])
+					
+# 					precipRate = ma.masked_array(precipRate, mask=(precipRate < 0.0))
+# 					TRMMCEData.close()
+# 				else:
+# 					print "nah dread it aint here"
+# 					#TODO: exit elegantly 
+# 					sys.exit()
+				
+# 				if firstTime == True:
+# 					#then clip the monthly dataset
+# 					#find the min & max lat and lon of the TRMMNETCDF dataset and extract that data from the mthly file
+# 					latStartIndex = np.where(LAT[:,0]==LATTRMM[0][0])[0][0]
+# 					latEndIndex = np.where(LAT[:,0]==LATTRMM[-1][0])[0][0]
+# 					lonStartIndex = np.where(LON[0,:]==LONTRMM[0][0])[0][0]
+# 					lonEndIndex = np.where(LON[0,:]==LONTRMM[0][-1])[0][0]
+# 					accuPrecipRate = ma.zeros((precipRate.shape))
+# 					firstTime = False
+# 				else:
+# 					accuPrecipRate += precipRate
+	
+# 				#create new netCDF file to write the accumulated RR associated with the MCC
+# 				#can remove here for checking purposes
+# 				accuMCCFile = MAINDIRECTORY+'/TRMMnetcdfCEs/accuMCC'+str(mccCount)+'.nc'	
+# 				accuMCCData = Dataset(accuMCCFile, 'w', format='NETCDF4')
+# 				accuMCCData.description =  'Accumulated precipitation data'
+# 				accuMCCData.calendar = 'standard'
+# 				accuMCCData.conventions = 'COARDS'
+# 				# dimensions
+# 				accuMCCData.createDimension('time', None)
+# 				accuMCCData.createDimension('lat', nygrdTRMM)
+# 				accuMCCData.createDimension('lon', nxgrdTRMM)
+# 				# variables
+# 				MCCprecip = ('time','lat', 'lon',)
+# 				times = accuMCCData.createVariable('time', 'f8', ('time',))
+# 				latitude = accuMCCData.createVariable('latitude', 'f8', ('lat',))
+# 				longitude = accuMCCData.createVariable('longitude', 'f8', ('lon',))
+# 				rainFallacc = accuMCCData.createVariable('precipitation_Accumulation', 'f8',MCCprecip)
+# 				rainFallacc.units = 'mm'
+
+# 				longitude[:] = LONTRMM[0,:]
+# 				longitude.units = "degrees_east" 
+# 				longitude.long_name = "Longitude" 
+
+# 				latitude[:] =  LATTRMM[:,0]
+# 				latitude.units = "degrees_north"
+# 				latitude.long_name ="Latitude"
+
+# 				rainFallacc[:] = accuPrecipRate[:]
+
+# 				accuMCCData.close()
+# 				#end writing the file
+				
+# 			regriddedTRMM[latStartIndex:(latEndIndex +1),lonStartIndex:(lonEndIndex+1)] += np.squeeze(accuPrecipRate, axis=0)
+			
+# 			#append total of that MCC to totalMCCsInMth
+# 			eachMCCtotal.append(accuPrecipRate.sum())
+
+# 			#append the % contribution of the MCC to the month total within the domain
+# 			eachMCCTotalCmpToMth.append(accuPrecipRate.sum()/regriddedmthlyTRMM[latStartIndex:(latEndIndex +1),lonStartIndex:(lonEndIndex+1)].sum())
+	
+# 	#leave the clipping until the end
+# 	#get the relevant TRMM info 
+# 	allMCCsPrecip = regriddedTRMM[latStartIndexOffset:(latEndIndexOffset+1), lonStartIndexOffset:(lonEndIndexOffset+1)]
+	
+# 	#get the relevant TRMM info from the monthly file
+# 	mthlyPrecipRate = regriddedmthlyTRMM[latStartIndexOffset:(latEndIndexOffset+1), lonStartIndexOffset:(lonEndIndexOffset+1)]
+	
+# 	eachCellContribution = ma.zeros(mthlyPrecipRate.shape)
+# 	eachCellContribution = allMCCsPrecip/mthlyPrecipRate
+# 	eachContributionLess = ma.masked_array(eachCellContribution, mask=(eachCellContribution >= 1.0))
+# 	eachContributionMore = ma.masked_array(eachCellContribution, mask=(eachCellContribution <= 1.0))
+	
+# 	# generate plot info and create the plots
+
+# 	#viewMthlyTotals(eachCellContribution,latBandMin, latBandMax, lonBandMin, lonBandMax)
+# 	title = 'Each MCC contribution to the monthly TRMM total'
+# 	imgFilename = MAINDIRECTORY+'/images/MCCContribution.gif'
+# 	clevs = np.arange(0,100,5)
+# 	infoDict ={'dataset':eachContributionLess*100.0, 'imgFilename':imgFilename, 'title':title,'clevs':clevs, 'latBandMin': latBandMin, 'latBandMax': latBandMax, 'lonBandMin': lonBandMin, 'lonBandMax': lonBandMax}
+# 	viewMthlyTotals(infoDict)
+# 	#viewMthlyTotals(eachContributionLess*100.0,title, imgFilename, latBandMin, latBandMax, lonBandMin, lonBandMax)
+	
+# 	title = 'MCC contributions that exceed the monthly TRMM total'
+# 	imgFilename = MAINDIRECTORY+'/images/MCCexceedTRMM.gif'	
+# 	clevs = np.arange(100,float(np.max(eachContributionMore))*100 + 5,5)
+# 	infoDict ={'dataset':eachContributionMore*100.0, 'imgFilename':imgFilename, 'title':title,'clevs':clevs, 'latBandMin': latBandMin, 'latBandMax': latBandMax, 'lonBandMin': lonBandMin, 'lonBandMax': lonBandMax}
+# 	viewMthlyTotals(infoDict)
+# 	#viewMthlyTotals(eachContributionMore*100.0,title, imgFilename, latBandMin, latBandMax, lonBandMin, lonBandMax)
+# #******************************************************************
 #
 #							PLOTS
 #
@@ -2828,7 +3957,7 @@ def displaySize(finalMCCList):
 					ax.plot(eachNode['cloudElementTime'], eachNode['cloudElementArea'],'ro',markersize=30)
 				
 			#axes and labels
-			maxArea += 1000.00
+			maxArea += 20000.00
 			ax.set_xlim(starttime,endtime)
 			ax.set_ylim(minArea,maxArea)
 			ax.set_ylabel('Area in km^2', fontsize=12)
@@ -3094,7 +4223,7 @@ def plotAccTRMM (finalMCCList):
 	'''
 	Purpose:: 
 		(1) generate a file with the accumulated precipiation for the MCS
-		(2) generate the appropriate image
+		(2) generate the appropriate image using GrADS
 		TODO: NB: as the domain changes, will need to change XDEF and YDEF by hand to accomodate the new domain
 		TODO: look into getting the info from the NETCDF file
 
@@ -3485,7 +4614,8 @@ def createTextFile(finalMCCList, identifier):
 				maxCEprecipRate = thisNode['CETRMMmax']
 				
 
-			#calculations for only the mature stage
+			#calculations for only the mature stage 
+			#for MCS nodes, this may throw an error as all the nodes would have been read to be given an identifier
 			if thisNode['nodeMCSIdentifier'] == 'M':
 				#calculate average area of the maturity feature only 
 				averageArea += thisNode['cloudElementArea']
@@ -3689,6 +4819,56 @@ def createTextFile(finalMCCList, identifier):
 	MCSSummaryFile.close
 	MCSPostFile.close
 	return
+#******************************************************************
+def viewMthlyTotals(plotInfoDict):
+	'''
+	Purpose:: 
+		To display the percentage contribution of each MCC to the monthly total
+	Input:: 
+		plotInfoDict: a dictionary containing all the information needed for plotting
+			dataset: 4D numpy array of data to be plotted
+			title: string representing the title to be used in the plt
+			imgFilename: a string representing the file name to be used to save the plt
+			clevs: an array representing the values and the interval for the legend
+			latBandMin: floating-point number representing the minimum latitude in the domain
+			latBandMax: floating-point number representing the maximum latitude in the domain
+			lonBandMin: floating-point number representing the minimum longitude in the domain
+			lonBandMax: floating-point number representing the maximum longitude in the domain
+		
+	Output:: 
+		a plot
+
+	Assumptions:: uses Matplotlib
+
+	'''
+	plt.close('all')
+
+	Basemap.latlon_default=True
+	
+	a_map = Basemap(projection = 'merc', llcrnrlon = plotInfoDict['lonBandMin'], 
+			urcrnrlon = plotInfoDict['lonBandMax'], llcrnrlat = plotInfoDict['latBandMin'], urcrnrlat = plotInfoDict['latBandMax'], resolution = 'l')
+
+	a_map.drawcoastlines(linewidth = 0.25)
+	a_map.drawcountries(linewidth = 0.25)
+
+	nygrd = plotInfoDict['dataset'].shape[0]; nxgrd = plotInfoDict['dataset'].shape[1]	
+	
+	#projecting on to the correct map grid
+	lons, lats = a_map.makegrid(nxgrd, nygrd)
+	x,y = a_map(lons, lats)
+	
+	#actually print the map
+	cs = a_map.contourf(x,y,plotInfoDict['dataset'],plotInfoDict['clevs'], cmap = plt.cm.Blues)#PuRd)
+	
+	cbar = a_map.colorbar(cs, location = 'bottom')#, pad = "5%")
+	cbar.set_label('%')
+
+	plt.hold(True)
+
+	plt.title(plotInfoDict['title'])
+	    				
+	plt.savefig(plotInfoDict['imgFilename'])#, transparent = True)
+#******************************************************************
 #******************************************************************
 #			PLOTTING UTIL SCRIPTS
 #******************************************************************
