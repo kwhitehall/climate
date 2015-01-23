@@ -3170,8 +3170,8 @@ def precipMaxMin(finalMCCList):
 	 
 	return MCSPrecip
 #******************************************************************
-def compareToMthlyTotal(MCCListOfLists, monthlyTRMM):
-	'''
+'''def compareToMthlyTotal(MCCListOfLists, monthlyTRMM):
+	
 	Purpose:: To determine the percentage contribution of each MCC 
 		to the monthly total
 
@@ -3183,7 +3183,7 @@ def compareToMthlyTotal(MCCListOfLists, monthlyTRMM):
 		a floating-point of the average contribution
 		a floating-point of the total contribution
 
-	'''
+	
 
 	int nextMth = 0
 	int currMth = 0
@@ -3243,7 +3243,7 @@ def compareToMthlyTotal(MCCListOfLists, monthlyTRMM):
 		clevs = np.arange(100,float(np.max(eachContributionMore))*100 + 5,5)
 		infoDict ={'dataset':eachContributionMore*100.0, 'imgFilename':imgFilename, 'title':title,'clevs':clevs, 'latBandMin': latBandMin, 'latBandMax': latBandMax, 'lonBandMin': lonBandMin, 'lonBandMax': lonBandMax}
 		viewMthlyTotals(infoDict)
-
+'''
 #******************************************************************
 def compareToMthlyTotalOld(MCCListOfLists, monthlyTRMM):
 	'''
@@ -3492,7 +3492,7 @@ def compareToMthlyTotalCall(starttime, endtime):
 	while thisTime <= eTime:
 		month = thisTime[5:7]
 		year = thisTime[:4]
-		if currmth = 0:
+		if currmth == 0:
 			#open the file
 			thisMthData = openMthlyTRMM(year,month)
 			compareToMthlyTotal(MCCListOfListsForTheMonth, thisMthData)
