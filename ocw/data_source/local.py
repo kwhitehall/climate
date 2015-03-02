@@ -186,7 +186,9 @@ def load_file(file_path,
     times = utils.decode_time_values(netcdf, time_name)
     times = numpy.array(times)
     values = ma.array(netcdf.variables[variable_name][:])
+    print "variable_name ", variable_name
     variable_unit = netcdf.variables[variable_name].units
+
 
     # If the values are 4D then we need to strip out the elevation index
     if len(values.shape) == 4:

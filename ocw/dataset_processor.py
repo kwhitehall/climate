@@ -300,6 +300,7 @@ def write_netcdf(dataset, path, compress=True):
     lons[:] = dataset.lons
     times[:] = netCDF4.date2num(dataset.times, times.units)
     values[:] = dataset.values
+    values.units = dataset.units
 
     out_file.close()
 
