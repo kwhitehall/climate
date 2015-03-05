@@ -125,6 +125,9 @@ def spatial_regrid(target_dataset, new_latitudes, new_longitudes):
 def ensemble(datasets):
     """
     Generate a single dataset which is the mean of the input datasets
+
+    An ensemble datasets combines input datasets assuming the all have
+    similar shape, dimensions, and units. 
     
     :param datasets: Datasets to be used to compose the ensemble dataset from.
         All Datasets must be the same shape.
@@ -300,32 +303,35 @@ def write_netcdf(dataset, path, compress=True):
     lons[:] = dataset.lons
     times[:] = netCDF4.date2num(dataset.times, times.units)
     values[:] = dataset.values
+    values.units = dataset.units
 
     out_file.close()
 
-def unit_conversion(dataset):
-    ''' convert the units of model water flux variables (precipitation, evaporation, runoff) into "mm/day" as necessary
-        refactored from do_data_prep.py
+def water_flux_unit_conversion(dataset):
+    ''' Convert water flux variables units as necessary
+
+    Convert full SI units water flux units to more common units.
 
     :param dataset: The dataset to convert.
     :type dataset: :class:`dataset.Dataset`
 
-    returns: dataset with new units
-    rtype(:class::`dataset.Dataset`)
-
+    :returns: A Dataset with values converted to new units.
+    :rtype: :class:`dataset.Dataset`
     '''
-    if ('pr' in dataset.variable) or ('precip' in dataset.variable) or ('evspsbl' in dataset.variable) or ('mrro' in dataset.variable)or ('mrros'in dataset.variable):
-        if ('KG M-2 S-1' in dataset.units) or ('kg m-2 s-1' in dataset.units) or ('MM S-1' in dataset.units) or ('mm s-1' in dataset.units) or ('mm/sec' in dataset.units):
-            dataset.values = 86400. * dataset.values
-            dataset.units = 'mm/day'
+    waterFluxVariables = ['pr', 'evspsbl', 'mrro', 'swe']
+    variable = dataset.variable.lower()
+
+    if any(subString in variable for subString in waterFluxVariables):
+        dataset_units = dataset.units.lower()
+        if variable in 'swe':
+            if any(unit in dataset_units for unit in ['m', 'meter']):
+                dataset.values = 1.e3 * dataset.values
+                dataset.units = 'km'
         else:
-            pass
-    elif ('SWE' in dataset.variable) or ('swe' in dataset.variable):
-        if (dataset.units=='m') or (dataset.units=='M') or (dataset.units=='meter') or (dataset.units=='METER'):
-            dataset.values = 1.e3 * dataset.values
-            dataset.units = 'km'
-        else:
-            pass
+            if any(unit in dataset_units 
+                for unit in ['kg m-2 s-1', 'mm s-1', 'mm/sec']):
+                dataset.values = 86400. * dataset.values
+                dataset.units = 'mm/day'
 
     return dataset
 
