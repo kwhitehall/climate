@@ -169,7 +169,11 @@ def subset(subregion, target_dataset, subregion_name=None):
 
     :raises: ValueError
     '''
-
+    
+    if not subregion.start:
+        subregion.start = target_dataset.times[0] 
+        subregion.end = target_dataset.times[-1]
+        
     # Ensure that the subregion information is well formed
     _are_bounds_contained_by_dataset(subregion, target_dataset)
 
