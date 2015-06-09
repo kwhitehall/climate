@@ -361,13 +361,11 @@ def water_flux_unit_conversion(dataset):
     '''
     waterFluxVariables = ['pr', 'evspsbl', 'mrro']
     variable = dataset.variable.lower()
-
-    if any(subString in variable for subString in waterFluxVariables):
-        dataset_units = dataset.units.lower()
-        if any(unit in dataset_units 
-            for unit in ['kg m-2 s-1', 'mm s-1', 'mm/sec']):
-            dataset.values = 86400. * dataset.values
-            dataset.units = 'mm/day'
+    dataset_units = dataset.units.lower()
+    if any(unit in dataset_units 
+        for unit in ['kg m-2 s-1', 'mm s-1', 'mm/sec']):
+        dataset.values = 86400. * dataset.values
+        dataset.units = 'mm/day'
 
     return dataset
 
