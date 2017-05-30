@@ -36,9 +36,9 @@ def main():
     # for GrADs
     subprocess.call('export DISPLAY=:0.0', shell=True)
 
-    mainDirStr = "/directory/to/where/to/store/outputs"
-    TRMMdirName = "/directory/to/the/TRMM/netCDF/files"
-    CEoriDirName = "/directory/to/the/MERG/netCDF/files"
+    mainDirStr = "/Users/kwhitehall/Downloads/climate-test"
+    TRMMdirName = "/Users/kwhitehall/Documents/capstones/usc2015/paperData/TRMM"
+    CEoriDirName = "/Users/kwhitehall/Documents/capstones/usc2015/paperData/MERG"
 
     # for first time working with the raw MERG zipped files
     # mccSearch.preprocessingMERG("/directory/to/where/the/raw/MERG/files/are")
@@ -54,6 +54,7 @@ def main():
     # mccSearch.postProcessingNetCDF(2)
     # -------------------------------------------------------------------------------------------------
 
+    print 'go!'
     # let's go!
     print("\n -------------- Read MERG Data ----------")
     mergImgs, timeList = mccSearch.readMergData(CEoriDirName)
@@ -63,7 +64,7 @@ def main():
     # print 'timeList', timeList
     print('TRMMdirName ', TRMMdirName)
     print("\n -------------- TESTING findCloudElements ----------")
-    CEGraph = mccSearch.findCloudElements(mergImgs, timeList, TRMMdirName)
+    CEGraph = mccSearch.findCloudElements(mergImgs, timeList) #, TRMMdirName)
     # if the TRMMdirName wasnt entered for whatever reason, you can still get the TRMM data this way
     # CEGraph = mccSearch.findCloudElements(mergImgs,timeList)
     # allCETRMMList=mccSearch.findPrecipRate(TRMMdirName,timeList)

@@ -365,7 +365,7 @@ def findCloudElements(mergImgs, timelist, TRMMdirName=None):
                 longitudes = currNetCDFCEData.createVariable(
                     'longitude', 'f8', ('lon',))
                 brightnesstemp = currNetCDFCEData.createVariable(
-                    'brightnesstemp', 'i16', tempDims)
+                    'brightnesstemp', 'i8', tempDims)
                 brightnesstemp.units = 'Kelvin'
                 # NETCDF data
                 dates = [timelist[t] + timedelta(hours=0)]
@@ -549,11 +549,14 @@ def findCloudElements(mergImgs, timelist, TRMMdirName=None):
 
                 # latCenter and lonCenter are given according to the particular array defining this CE
                 # so you need to convert this value to the overall domain truth
-                latCenter = cloudElementLat[round(latCenter)]
-                lonCenter = cloudElementLon[round(lonCenter)]
-                cloudElementsUserFile.write(
-                    "\nCenter (lat,lon) is: %.2f\t%.2f" %
-                    (latCenter, lonCenter))
+                # latCenter = cloudElementLat[round(latCenter)]
+                # lonCenter = cloudElementLon[round(lonCenter)]
+                # cloudElementsUserFile.write(
+                #     "\nCenter (lat,lon) is: %.2f\t%.2f" %
+                #     (latCenter, lonCenter))
+
+                latCenter = -9999.0
+                lonCenter = -9999.0
                 cloudElementCenter.append(latCenter)
                 cloudElementCenter.append(lonCenter)
                 cloudElementsUserFile.write(
@@ -677,8 +680,10 @@ def findCloudElements(mergImgs, timelist, TRMMdirName=None):
                     # truth
                     latCenter, lonCenter = ndimage.measurements.center_of_mass(
                         cloudElement, labels=labels)
-                    latCenter = cloudElementLat[round(latCenter)]
-                    lonCenter = cloudElementLon[round(lonCenter)]
+                    # latCenter = cloudElementLat[round(latCenter)]
+                    # lonCenter = cloudElementLon[round(lonCenter)]
+                    latCenter = -9999.0
+                    lonCenter = -9999.0
                     cloudElementsFile.write(
                         "\nCenter (lat,lon) is: %.2f\t%.2f" %
                         (latCenter, lonCenter))

@@ -20,7 +20,8 @@
 
 import networkx as nx
 # mccSearch modules
-from mccSearch import *
+# from mccSearch import *
+from . import mccSearch
 
 
 def main():
